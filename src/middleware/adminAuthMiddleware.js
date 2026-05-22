@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const User = require('../../../backend/src/models/User');
+const User = require('../models/User');
 const { logger } = require('../utils/logger');
 
 // Admin server validates admin JWT.
