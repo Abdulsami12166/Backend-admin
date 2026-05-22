@@ -1,10 +1,6 @@
-const path = require('path');
-
-// Render-safe absolute imports (Root Directory = src, so models live at src/models/)
-const backendRoot = process.cwd();
-const Order = require(path.join(backendRoot, 'models', 'Order'));
-const { sendSuccess, sendError } = require(path.join(backendRoot, 'utils', 'responseHandler'));
-const { logger } = require(path.join(backendRoot, 'utils', 'logger'));
+const Order = require('../../models/Order');
+const { sendSuccess, sendError } = require('../../utils/responseHandler');
+const { logger } = require('../../utils/logger');
 
 const getAdminOrders = async (req, res, next) => {
   try {
