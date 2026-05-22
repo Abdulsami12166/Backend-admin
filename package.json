@@ -1,0 +1,29 @@
+{
+  "name": "ecommerce-admin-backend",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.7.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "imagekit": "^6.0.0",
+    "mongoose": "^8.15.1",
+    "multer": "^2.0.0",
+    "nodemailer": "^6.10.1",
+    "razorpay": "^2.9.6",
+    "resend": "^6.12.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
+
