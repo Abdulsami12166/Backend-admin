@@ -25,6 +25,15 @@ const adminUpdateOrderStatus = async (req, res, next) => {
     await order.save();
     logger.info('Admin updated order status', { orderId: order._id });
 
+    const io = req.app.get('io');
+    if (io) {
+      io.to('admin-room').emit('order-status-changed', {
+        orderId: order._id,
+        orderStatus: order.orderStatus,
+        paymentStatus: order.paymentStatus,
+      });
+    }
+
     return sendSuccess(res, 200, 'Order status updated successfully', { order });
   } catch (e) {
     next(e);
@@ -43,5 +52,23 @@ const adminDeleteOrder = async (req, res, next) => {
   }
 };
 
-module.exports = { getAdminOrders, adminUpdateOrderStatus, adminDeleteOrder };
+const adminCreateOrder = async (req, res, next) => {
+  try {
+    const order = await Order.create(req.body);
+    
+    const io = req.app.get('io');
+    if (io) {
+      io.to('admin-room').emit('new-order', {
+        orderId: order._id,
+        ...order.toObject(),
+      });
+    }
+
+    return sendSuccess(res, 201, 'Order created successfully', { order });
+  } catch (e) {
+    next(e);
+  }
+};
+
+module.exports = { getAdminOrders, adminUpdateOrderStatus, adminDeleteOrder, adminCreateOrder };
 

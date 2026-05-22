@@ -1,10 +1,21 @@
 const User = require('../../models/User');
+const Order = require('../../models/Order');
 const { sendSuccess, sendError } = require('../../utils/responseHandler');
 
 const getAdminUsers = async (req, res, next) => {
   try {
     const users = await User.find().select('name email phone role avatar isVerified blocked lastLoginAt createdAt').sort({ createdAt: -1 });
     return sendSuccess(res, 200, 'Admin users fetched successfully', { users });
+  } catch (e) {
+    next(e);
+  }
+};
+
+const getAdminUserOrders = async (req, res, next) => {
+  try {
+    const orders = await Order.find({ user: req.params.id })
+      .sort({ createdAt: -1 });
+    return sendSuccess(res, 200, 'User orders fetched successfully', { orders });
   } catch (e) {
     next(e);
   }
@@ -60,6 +71,14 @@ const adminForceLogoutUser = async (req, res, next) => {
     user.refreshToken = undefined;
     await user.save();
 
+    const io = req.app.get('io');
+    if (io) {
+      io.to('admin-room').emit('user-force-logout', {
+        userId: user._id,
+        message: `${user.name || user.email} was forcefully logged out`,
+      });
+    }
+
     return sendSuccess(res, 200, 'User has been forcefully logged out');
   } catch (e) {
     next(e);
@@ -68,6 +87,7 @@ const adminForceLogoutUser = async (req, res, next) => {
 
 module.exports = {
   getAdminUsers,
+  getAdminUserOrders,
   adminDeleteUser,
   adminBlockUser,
   adminUnblockUser,
