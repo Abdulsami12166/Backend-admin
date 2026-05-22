@@ -50,5 +50,24 @@ const adminUnblockUser = async (req, res, next) => {
   }
 };
 
-module.exports = { getAdminUsers, adminDeleteUser, adminBlockUser, adminUnblockUser };
+const adminForceLogoutUser = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id).select('+refreshToken');
+    if (!user) return sendError(res, 404, 'User not found');
 
+    user.refreshToken = undefined;
+    await user.save();
+
+    return sendSuccess(res, 200, 'User has been forcefully logged out');
+  } catch (e) {
+    next(e);
+  }
+};
+
+module.exports = {
+  getAdminUsers,
+  adminDeleteUser,
+  adminBlockUser,
+  adminUnblockUser,
+  adminForceLogoutUser,
+};

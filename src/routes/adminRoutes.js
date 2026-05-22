@@ -18,6 +18,7 @@ const {
   adminDeleteUser,
   adminBlockUser,
   adminUnblockUser,
+  adminForceLogoutUser,
 } = require('../controllers/admin/userAdminController');
 
 const { getAdminDashboardMetrics } = require('../controllers/admin/dashboardAdminController');
@@ -41,6 +42,7 @@ router.get('/users', protect, authorize('admin'), getAdminUsers);
 router.delete('/users/:id', protect, authorize('admin'), adminDeleteUser);
 router.post('/users/:id/block', protect, authorize('admin'), adminBlockUser);
 router.post('/users/:id/unblock', protect, authorize('admin'), adminUnblockUser);
+router.post('/users/:id/logout', protect, authorize('admin'), adminForceLogoutUser);
 
 module.exports = router;
 
