@@ -1,6 +1,11 @@
-const Product = require('../../../../backend/src/models/Product');
-const { sendSuccess, sendError } = require('../../../../backend/src/utils/responseHandler');
-const { logger } = require('../../utils/logger');
+const path = require('path');
+
+// Render-safe absolute imports (Root Directory = src, so models live at src/models/)
+const backendRoot = process.cwd();
+const Product = require(path.join(backendRoot, 'models', 'Product'));
+const { sendSuccess, sendError } = require(path.join(backendRoot, 'utils', 'responseHandler'));
+
+const { logger } = require(path.join(backendRoot, 'utils', 'logger'));
 
 const getAdminProducts = async (req, res, next) => {
   try {

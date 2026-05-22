@@ -1,10 +1,16 @@
-const User = require('../../../../backend/src/models/User');
-const Order = require('../../../../backend/src/models/Order');
-const Product = require('../../../../backend/src/models/Product');
+const path = require('path');
 
-const { logger } = require('../../utils/logger');
+// Render-safe absolute imports (avoids fragile deep relative paths)
+const backendRoot = process.cwd();
 
-const { sendSuccess, sendError } = require('../../../../backend/src/utils/responseHandler');
+const User = require(path.join(backendRoot, 'models', 'User'));
+const Order = require(path.join(backendRoot, 'models', 'Order'));
+const Product = require(path.join(backendRoot, 'models', 'Product'));
+
+const { logger } = require(path.join(backendRoot, 'utils', 'logger'));
+
+const { sendSuccess, sendError } = require(path.join(backendRoot, 'utils', 'responseHandler'));
+
 
 const getAdminDashboardMetrics = async (req, res, next) => {
   try {

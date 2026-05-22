@@ -1,6 +1,9 @@
-const User = require('../../../../backend/src/models/User');
+const path = require('path');
 
-const { sendSuccess, sendError } = require('../../../../backend/src/utils/responseHandler');
+// Render-safe absolute imports (Root Directory = src, so models live at src/models/)
+const backendRoot = process.cwd();
+const User = require(path.join(backendRoot, 'models', 'User'));
+const { sendSuccess, sendError } = require(path.join(backendRoot, 'utils', 'responseHandler'));
 
 const getAdminUsers = async (req, res, next) => {
   try {
