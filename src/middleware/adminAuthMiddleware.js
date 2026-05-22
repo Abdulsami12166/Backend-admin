@@ -1,46 +1,61 @@
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { logger } = require('../utils/logger');
 
-// Admin server validates admin JWT.
-// This reuses the same User collection/role field.
-const protect = async (req, res, next) => {
+const adminLogin = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
-    const token =
-      authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+    const { email, password } = req.body;
+    const user = await User.findOne({ email }).select('+password');
 
-    if (!token) {
-      logger.warn('Admin protected route denied because token is missing');
-      return res.status(401).json({ success: false, message: 'Not authorized' });
+    if (!user || user.role !== 'admin') {
+      logger.warn('Admin login failed: not found or not admin', { email });
+      return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
     }
 
-    const decoded = jwt.verify(token, process.env.ADMIN_JWT_SECRET);
-    const user = await User.findById(decoded.id).select('-password -refreshToken -otpCode -otpExpiresAt');
-
-    if (!user) {
-      logger.warn('Admin protected route denied because user not found');
-      return res.status(401).json({ success: false, message: 'User not found' });
+    const passOk = await user.comparePassword(password);
+    if (!passOk) {
+      logger.warn('Admin login failed: wrong password', { email, userId: user._id });
+      return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
     }
 
-    req.user = user;
-    next();
+    user.lastLoginAt = new Date();
+    await user.save();
+
+    logger.info('Admin logged in', { userId: user._id, email: user.email });
+
+    return res.json({
+      success: true,
+      message: 'Admin logged in successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
   } catch (error) {
     next(error);
   }
 };
 
-const authorize = (...roles) => (req, res, next) => {
-  if (!req.user || !roles.includes(req.user.role)) {
-    logger.warn('Admin role-based access denied', {
-      role: req.user?.role,
-      requiredRoles: roles,
-    });
-    return res.status(403).json({ success: false, message: 'Forbidden' });
+const adminMe = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.query.userId).select('-password -refreshToken -otpCode -otpExpiresAt');
+    if (!user || user.role !== 'admin') {
+      return res.status(404).json({ success: false, message: 'Admin not found' });
+    }
+    return res.json({ success: true, user });
+  } catch (error) {
+    next(error);
   }
+};
 
+const authorizeAdmin = (req, res, next) => {
+  const { userId } = req.query;
+  if (!userId) {
+    return res.status(401).json({ success: false, message: 'User ID required' });
+  }
+  req.userId = userId;
   next();
 };
 
-module.exports = { protect, authorize };
-
+module.exports = { adminLogin, adminMe, authorizeAdmin };
