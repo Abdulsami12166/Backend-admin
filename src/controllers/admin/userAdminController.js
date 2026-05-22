@@ -3,7 +3,7 @@ const { sendSuccess, sendError } = require('../../utils/responseHandler');
 
 const getAdminUsers = async (req, res, next) => {
   try {
-    const users = await User.find().select('name email phone role avatar isVerified blocked createdAt');
+    const users = await User.find().select('name email phone role avatar isVerified blocked lastLoginAt createdAt').sort({ createdAt: -1 });
     return sendSuccess(res, 200, 'Admin users fetched successfully', { users });
   } catch (e) {
     next(e);
@@ -52,9 +52,11 @@ const adminUnblockUser = async (req, res, next) => {
 
 const adminForceLogoutUser = async (req, res, next) => {
   try {
-    const user = await User.findById(req.params.id).select('+refreshToken');
+    const user = await User.findById(req.params.id).select('+refreshToken +tokenVersion');
     if (!user) return sendError(res, 404, 'User not found');
 
+    // Increment tokenVersion so existing JWTs become invalid immediately
+    user.tokenVersion = (user.tokenVersion ?? 0) + 1;
     user.refreshToken = undefined;
     await user.save();
 

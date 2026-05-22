@@ -17,6 +17,7 @@ const getAdminDashboardMetrics = async (req, res, next) => {
       blockedUsers,
       newUsersToday,
       ordersLast24h,
+      activeUsersLast24h,
       orderStatusCounts,
       revenueAgg,
       recentOrders,
@@ -28,6 +29,7 @@ const getAdminDashboardMetrics = async (req, res, next) => {
       User.countDocuments({ blocked: true }),
       User.countDocuments({ createdAt: { $gte: startOfToday } }),
       Order.countDocuments({ createdAt: { $gte: last24h } }),
+      User.countDocuments({ lastLoginAt: { $gte: last24h } }),
       Order.aggregate([
         { $group: { _id: '$orderStatus', count: { $sum: 1 } } },
       ]),
@@ -41,9 +43,9 @@ const getAdminDashboardMetrics = async (req, res, next) => {
         .populate('user', 'name email')
         .select('totalAmount orderStatus paymentStatus createdAt user'),
       User.find()
-        .sort({ createdAt: -1 })
-        .limit(8)
-        .select('name email role blocked isVerified createdAt'),
+        .sort({ lastLoginAt: -1 })
+        .limit(10)
+        .select('name email role blocked isVerified lastLoginAt createdAt'),
     ]);
 
     const ordersByStatus = orderStatusCounts.reduce((acc, item) => {
@@ -63,6 +65,7 @@ const getAdminDashboardMetrics = async (req, res, next) => {
       blockedUsers,
       newUsersToday,
       ordersLast24h,
+      activeUsersLast24h,
       ordersByStatus,
       recentOrders,
       recentUsers,
