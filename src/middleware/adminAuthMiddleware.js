@@ -70,7 +70,7 @@ const adminMe = async (req, res, next) => {
 
 const authorizeAdmin = async (req, res, next) => {
   const authHeader = req.headers.authorization || req.headers.Authorization;
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : req.query.token || req.query.authToken;
+  const token = authHeader ? authHeader.trim().replace(/^Bearer\s+/i, '') : req.query.token || req.query.authToken;
 
   if (!token || token.trim() === '') {
     return res.status(401).json({ success: false, message: 'Authorization token required' });
