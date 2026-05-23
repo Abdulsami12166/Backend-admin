@@ -72,6 +72,10 @@ const authorizeAdmin = async (req, res, next) => {
   const authHeader = req.headers.authorization || req.headers.Authorization;
   const token = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : req.query.token || req.query.authToken;
 
+  if (!token || token.trim() === '') {
+    return res.status(401).json({ success: false, message: 'Authorization token required' });
+  }
+
   if (token) {
     try {
       const decoded = jwt.verify(token, ADMIN_JWT_SECRET);
