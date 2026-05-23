@@ -91,10 +91,21 @@ const authorizeAdmin = async (req, res, next) => {
 
     // Validate token exists and is not empty
     if (!token || typeof token !== 'string' || token.trim().length === 0) {
+      logger.warn('Missing or invalid authorization token', {
+        hasAuthHeader: !!authHeader,
+        headerLength: authHeader ? authHeader.length : 0,
+        hasQueryToken: !!(req.query.token || req.query.authToken),
+      });
       return res.status(401).json({ success: false, message: 'Authorization token required' });
     }
 
     token = token.trim();
+
+    // Log token for debugging (first 20 chars only for security)
+    logger.info('Attempting JWT verification', {
+      tokenPreview: token.substring(0, 20) + '...',
+      tokenLength: token.length,
+    });
 
     // Verify JWT token
     const decoded = jwt.verify(token, ADMIN_JWT_SECRET);
@@ -127,12 +138,16 @@ const authorizeAdmin = async (req, res, next) => {
     if (error.name === 'JsonWebTokenError') {
       logger.warn('JWT validation error', { 
         message: error.message,
-        name: error.name 
+        name: error.name,
+        errorString: error.toString(),
       });
     } else if (error.name === 'TokenExpiredError') {
       logger.warn('JWT token expired', { expiredAt: error.expiredAt });
     } else {
-      logger.warn('Admin auth error', { message: error.message });
+      logger.warn('Admin auth error', { 
+        message: error.message,
+        name: error.name,
+      });
     }
     
     return res.status(401).json({ 
