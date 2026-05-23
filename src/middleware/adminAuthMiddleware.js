@@ -105,7 +105,21 @@ const authorizeAdmin = async (req, res, next) => {
     logger.info('Attempting JWT verification', {
       tokenPreview: token.substring(0, 20) + '...',
       tokenLength: token.length,
+      hasThreeParts: (token.match(/\./g) || []).length === 2,
     });
+
+    // Validate JWT format (should have exactly 3 parts separated by dots)
+    const jwtParts = token.split('.');
+    if (jwtParts.length !== 3) {
+      logger.warn('Invalid JWT format: does not have 3 parts', {
+        parts: jwtParts.length,
+        token: token.substring(0, 30),
+      });
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Invalid token format' 
+      });
+    }
 
     // Verify JWT token
     const decoded = jwt.verify(token, ADMIN_JWT_SECRET);
