@@ -69,45 +69,77 @@ const adminMe = async (req, res, next) => {
 };
 
 const authorizeAdmin = async (req, res, next) => {
-  const authHeader = req.headers.authorization || req.headers.Authorization;
-  const token = authHeader ? authHeader.trim().replace(/^Bearer\s+/i, '') : req.query.token || req.query.authToken;
+  try {
+    // Extract token from Authorization header or query params
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    let token = null;
 
-  if (!token || token.trim() === '') {
-    return res.status(401).json({ success: false, message: 'Authorization token required' });
-  }
-
-  if (token) {
-    try {
-      const decoded = jwt.verify(token, ADMIN_JWT_SECRET);
-      if (decoded.role !== 'admin') {
-        return res.status(403).json({ success: false, message: 'Admin access required' });
+    if (authHeader) {
+      // Handle "Bearer <token>" format
+      const parts = authHeader.trim().split(/\s+/);
+      if (parts.length === 2 && parts[0].toLowerCase() === 'bearer') {
+        token = parts[1];
+      } else if (parts.length === 1) {
+        token = parts[0];
       }
+    }
 
-      const currentUser = await User.findById(decoded.id).select('+tokenVersion role');
-      if (!currentUser || currentUser.role !== 'admin') {
-        return res.status(403).json({ success: false, message: 'Admin access required' });
-      }
+    // Fallback to query parameters
+    if (!token) {
+      token = req.query.token || req.query.authToken;
+    }
 
-      if (currentUser.tokenVersion !== decoded.tokenVersion) {
-        logger.warn('Admin token version mismatch', { userId: decoded.id });
-        return res.status(401).json({ success: false, message: 'Invalid or expired token' });
-      }
+    // Validate token exists and is not empty
+    if (!token || typeof token !== 'string' || token.trim().length === 0) {
+      return res.status(401).json({ success: false, message: 'Authorization token required' });
+    }
 
-      req.user = decoded;
-      req.userId = decoded.id;
-      return next();
-    } catch (error) {
-      logger.warn('Invalid admin auth token', { message: error.message });
+    token = token.trim();
+
+    // Verify JWT token
+    const decoded = jwt.verify(token, ADMIN_JWT_SECRET);
+
+    // Check if user has admin role
+    if (decoded.role !== 'admin') {
+      logger.warn('Admin role check failed', { userId: decoded.id });
+      return res.status(403).json({ success: false, message: 'Admin access required' });
+    }
+
+    // Verify user still exists and is admin
+    const currentUser = await User.findById(decoded.id).select('+tokenVersion role');
+    if (!currentUser || currentUser.role !== 'admin') {
+      logger.warn('Admin user not found or role changed', { userId: decoded.id });
+      return res.status(403).json({ success: false, message: 'Admin access required' });
+    }
+
+    // Check token version for token invalidation
+    if (currentUser.tokenVersion !== decoded.tokenVersion) {
+      logger.warn('Admin token version mismatch', { userId: decoded.id });
       return res.status(401).json({ success: false, message: 'Invalid or expired token' });
     }
-  }
 
-  if (req.query.userId) {
-    req.userId = req.query.userId;
+    // Attach user info to request
+    req.user = decoded;
+    req.userId = decoded.id;
     return next();
+  } catch (error) {
+    // Log detailed error for JWT-related issues
+    if (error.name === 'JsonWebTokenError') {
+      logger.warn('JWT validation error', { 
+        message: error.message,
+        name: error.name 
+      });
+    } else if (error.name === 'TokenExpiredError') {
+      logger.warn('JWT token expired', { expiredAt: error.expiredAt });
+    } else {
+      logger.warn('Admin auth error', { message: error.message });
+    }
+    
+    return res.status(401).json({ 
+      success: false, 
+      message: 'Invalid or expired token' 
+    });
   }
-
-  return res.status(401).json({ success: false, message: 'Authorization token required' });
 };
 
 module.exports = { adminLogin, adminMe, authorizeAdmin };
