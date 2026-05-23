@@ -117,8 +117,8 @@ const authorizeAdmin = async (req, res, next) => {
         hint: 'JWT must be in format: header.payload.signature. Did you forget to login first?',
       });
       return res.status(401).json({ 
-        success: false, 
-        message: 'Invalid token format. Please login first to get a valid JWT token.' 
+        success: false,
+        message: 'Invalid token format. Login first (POST /api/v1/admin/login), then send the returned JWT as Authorization: Bearer <token>.'
       });
     }
 
