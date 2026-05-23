@@ -1,5 +1,6 @@
 const User = require('../../models/User');
 const Order = require('../../models/Order');
+const UserActivity = require('../../models/UserActivity');
 const { sendSuccess, sendError } = require('../../utils/responseHandler');
 
 const getAdminUsers = async (req, res, next) => {
@@ -41,6 +42,14 @@ const adminBlockUser = async (req, res, next) => {
     user.blocked = true;
     await user.save();
 
+    await UserActivity.create({
+      user: user._id,
+      action: 'profile_update',
+      details: 'User blocked by admin',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return sendSuccess(res, 200, 'User blocked successfully', { user });
   } catch (e) {
     next(e);
@@ -54,6 +63,14 @@ const adminUnblockUser = async (req, res, next) => {
 
     user.blocked = false;
     await user.save();
+
+    await UserActivity.create({
+      user: user._id,
+      action: 'profile_update',
+      details: 'User unblocked by admin',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return sendSuccess(res, 200, 'User unblocked successfully', { user });
   } catch (e) {
@@ -78,6 +95,14 @@ const adminForceLogoutUser = async (req, res, next) => {
         message: `${user.name || user.email} was forcefully logged out`,
       });
     }
+
+    await UserActivity.create({
+      user: user._id,
+      action: 'logout',
+      details: 'User forcefully logged out by admin',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return sendSuccess(res, 200, 'User has been forcefully logged out');
   } catch (e) {

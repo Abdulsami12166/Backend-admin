@@ -1,4 +1,5 @@
 const Order = require('../../models/Order');
+const UserActivity = require('../../models/UserActivity');
 const { sendSuccess, sendError } = require('../../utils/responseHandler');
 const { logger } = require('../../utils/logger');
 
@@ -25,6 +26,14 @@ const adminUpdateOrderStatus = async (req, res, next) => {
     await order.save();
     logger.info('Admin updated order status', { orderId: order._id });
 
+    await UserActivity.create({
+      user: order.user,
+      action: 'order',
+      details: `Order status changed to ${order.orderStatus} by admin`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     const io = req.app.get('io');
     if (io) {
       io.to('admin-room').emit('order-status-changed', {
@@ -46,6 +55,15 @@ const adminDeleteOrder = async (req, res, next) => {
     if (!order) return sendError(res, 404, 'Order not found');
 
     await order.deleteOne();
+
+    await UserActivity.create({
+      user: order.user,
+      action: 'order',
+      details: 'Order deleted by admin',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return sendSuccess(res, 200, 'Order deleted successfully');
   } catch (e) {
     next(e);
@@ -56,6 +74,14 @@ const adminCreateOrder = async (req, res, next) => {
   try {
     const order = await Order.create(req.body);
     
+    await UserActivity.create({
+      user: order.user,
+      action: 'order',
+      details: 'Order created by admin',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     const io = req.app.get('io');
     if (io) {
       io.to('admin-room').emit('new-order', {
