@@ -24,6 +24,13 @@ app.use(cookieParser());
 app.use(requestLogger);
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Admin backend is running',
+  });
+});
+
 app.get('/api/v1/health', (req, res) => {
   res.json({
     success: true,
