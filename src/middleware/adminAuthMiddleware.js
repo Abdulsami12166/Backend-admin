@@ -68,7 +68,7 @@ const adminMe = async (req, res, next) => {
   }
 };
 
-const authorizeAdmin = (req, res, next) => {
+const authorizeAdmin = async (req, res, next) => {
   const authHeader = req.headers.authorization || req.headers.Authorization;
   const token = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : req.query.token || req.query.authToken;
 
@@ -78,6 +78,17 @@ const authorizeAdmin = (req, res, next) => {
       if (decoded.role !== 'admin') {
         return res.status(403).json({ success: false, message: 'Admin access required' });
       }
+
+      const currentUser = await User.findById(decoded.id).select('+tokenVersion role');
+      if (!currentUser || currentUser.role !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Admin access required' });
+      }
+
+      if (currentUser.tokenVersion !== decoded.tokenVersion) {
+        logger.warn('Admin token version mismatch', { userId: decoded.id });
+        return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+      }
+
       req.user = decoded;
       req.userId = decoded.id;
       return next();
