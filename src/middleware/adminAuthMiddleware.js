@@ -114,10 +114,11 @@ const authorizeAdmin = async (req, res, next) => {
       logger.warn('Invalid JWT format: does not have 3 parts', {
         parts: jwtParts.length,
         token: token.substring(0, 30),
+        hint: 'JWT must be in format: header.payload.signature. Did you forget to login first?',
       });
       return res.status(401).json({ 
         success: false, 
-        message: 'Invalid token format' 
+        message: 'Invalid token format. Please login first to get a valid JWT token.' 
       });
     }
 
