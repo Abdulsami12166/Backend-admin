@@ -25,11 +25,12 @@ const {
 
 const { getAdminDashboardMetrics, getAdminActivities } = require('../controllers/admin/dashboardAdminController');
 
-const { adminLogin, authorizeAdmin } = require('../middleware/adminAuthMiddleware');
+const { adminLogin, adminMe, authorizeAdmin } = require('../middleware/adminAuthMiddleware');
 
 const router = express.Router();
 
 router.post('/login', adminLogin);
+router.get('/me', authorizeAdmin, adminMe);
 
 router.get('/dashboard/metrics', authorizeAdmin, getAdminDashboardMetrics);
 router.get('/activities', authorizeAdmin, getAdminActivities);

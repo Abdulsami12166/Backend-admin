@@ -2,6 +2,7 @@ const User = require('../../models/User');
 const Order = require('../../models/Order');
 const UserActivity = require('../../models/UserActivity');
 const { sendSuccess, sendError } = require('../../utils/responseHandler');
+const { emitToAdmins, socketEvents } = require('../../utils/eventBus');
 
 const getAdminUsers = async (req, res, next) => {
   try {
@@ -45,7 +46,7 @@ const adminBlockUser = async (req, res, next) => {
     await UserActivity.create({
       user: user._id,
       action: 'profile_update',
-      details: 'User blocked by admin',
+      details: `${user.name || user.email} was blocked by admin`,
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
     });
@@ -67,7 +68,7 @@ const adminUnblockUser = async (req, res, next) => {
     await UserActivity.create({
       user: user._id,
       action: 'profile_update',
-      details: 'User unblocked by admin',
+      details: `${user.name || user.email} was unblocked by admin`,
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
     });
@@ -88,18 +89,18 @@ const adminForceLogoutUser = async (req, res, next) => {
     user.refreshToken = undefined;
     await user.save();
 
-    const io = req.app.get('io');
-    if (io) {
-      io.to('admin-room').emit('user-force-logout', {
-        userId: user._id,
-        message: `${user.name || user.email} was forcefully logged out`,
-      });
-    }
+    const payload = {
+      userId: String(user._id),
+      message: `${user.name || user.email} was forcefully logged out`,
+    };
+
+    emitToAdmins(req.app, socketEvents.LEGACY.USER_FORCE_LOGOUT, payload);
+    emitToAdmins(req.app, socketEvents.DOMAIN.ADMIN_FORCE_LOGOUT, payload);
 
     await UserActivity.create({
       user: user._id,
       action: 'logout',
-      details: 'User forcefully logged out by admin',
+      details: `${user.name || user.email} was forcefully logged out by admin`,
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
     });

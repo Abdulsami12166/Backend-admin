@@ -14,6 +14,18 @@ Admin-only backend server for the Ecommerce app.
 ## Base URL
 - Health: `GET /api/v1/health`
 - Admin API: `GET/PATCH/POST/DELETE /api/v1/admin/*`
+- Admin profile: `GET /api/v1/admin/me`
+
+## Realtime
+- Socket.IO connection requires a valid admin JWT
+- Subscribe event: `subscribe-admin`
+- Admin room events:
+  - `new-order`
+  - `order-status-changed`
+  - `user-force-logout`
+  - `order.created`
+  - `order.updated`
+  - `admin.user.force_logout`
 
 ## Admin endpoints
 - Dashboard metrics: `GET /api/v1/admin/dashboard/metrics`

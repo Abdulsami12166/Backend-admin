@@ -2,6 +2,7 @@ const Order = require('../../models/Order');
 const UserActivity = require('../../models/UserActivity');
 const { sendSuccess, sendError } = require('../../utils/responseHandler');
 const { logger } = require('../../utils/logger');
+const { emitToAdmins, socketEvents } = require('../../utils/eventBus');
 
 const getAdminOrders = async (req, res, next) => {
   try {
@@ -29,19 +30,20 @@ const adminUpdateOrderStatus = async (req, res, next) => {
     await UserActivity.create({
       user: order.user,
       action: 'order',
-      details: `Order status changed to ${order.orderStatus} by admin`,
+      details: `Order ${String(order._id).slice(-6).toUpperCase()} updated to ${order.orderStatus}`,
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
     });
 
-    const io = req.app.get('io');
-    if (io) {
-      io.to('admin-room').emit('order-status-changed', {
-        orderId: order._id,
-        orderStatus: order.orderStatus,
-        paymentStatus: order.paymentStatus,
-      });
-    }
+    const payload = {
+      orderId: String(order._id),
+      userId: String(order.user),
+      orderStatus: order.orderStatus,
+      paymentStatus: order.paymentStatus,
+    };
+
+    emitToAdmins(req.app, socketEvents.LEGACY.ORDER_STATUS_CHANGED, payload);
+    emitToAdmins(req.app, socketEvents.DOMAIN.ORDER_UPDATED, payload);
 
     return sendSuccess(res, 200, 'Order status updated successfully', { order });
   } catch (e) {
@@ -77,18 +79,18 @@ const adminCreateOrder = async (req, res, next) => {
     await UserActivity.create({
       user: order.user,
       action: 'order',
-      details: 'Order created by admin',
+      details: `Order ${String(order._id).slice(-6).toUpperCase()} created by admin`,
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
     });
 
-    const io = req.app.get('io');
-    if (io) {
-      io.to('admin-room').emit('new-order', {
-        orderId: order._id,
-        ...order.toObject(),
-      });
-    }
+    const payload = {
+      orderId: String(order._id),
+      ...order.toObject(),
+    };
+
+    emitToAdmins(req.app, socketEvents.LEGACY.NEW_ORDER, payload);
+    emitToAdmins(req.app, socketEvents.DOMAIN.ORDER_CREATED, payload);
 
     return sendSuccess(res, 201, 'Order created successfully', { order });
   } catch (e) {
