@@ -2,6 +2,13 @@ const Product = require('../../models/Product');
 const { sendSuccess, sendError } = require('../../utils/responseHandler');
 const { logger } = require('../../utils/logger');
 
+const slugify = value =>
+  String(value || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
 const getAdminProducts = async (req, res, next) => {
   try {
     const products = await Product.find().populate('seller', 'name email role blocked');
@@ -13,9 +20,17 @@ const getAdminProducts = async (req, res, next) => {
 
 const adminCreateProduct = async (req, res, next) => {
   try {
+    const baseSlug = slugify(req.body.slug || req.body.title);
     const product = await Product.create({
       ...req.body,
-      seller: req.body.seller,
+      slug: `${baseSlug || 'product'}-${Date.now()}`,
+      seller: req.body.seller || req.userId,
+      images: Array.isArray(req.body.images)
+        ? req.body.images.filter(Boolean)
+        : req.body.image
+          ? [req.body.image]
+          : [],
+      isPublished: req.body.isPublished ?? true,
     });
 
     logger.info('Admin created product', { productId: product._id });
