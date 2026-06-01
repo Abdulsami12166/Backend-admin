@@ -4,7 +4,12 @@ Admin-only backend server for the Ecommerce app.
 
 ## Run
 1. Create/adjust environment variables in `backend-admin/.env`.
-2. Start:
+2. Seed or refresh the least-privilege admin accounts:
+   ```bash
+   cd backend-admin
+   npm run seed:admins
+   ```
+3. Start:
    ```bash
    cd backend-admin
    npm install

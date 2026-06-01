@@ -6,6 +6,13 @@ const { logger } = require('./logger');
 const { socketEvents } = require('./socketEvents');
 
 const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET || 'default_admin_secret';
+const ADMIN_ROLES = ['admin', 'super-admin', 'product-manager', 'support'];
+
+const normalizeRole = role =>
+  String(role || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, '-');
 
 const extractSocketToken = socket =>
   socket.handshake.auth?.token
@@ -21,7 +28,7 @@ const resolveSocketUser = async socket => {
     const decoded = jwt.verify(token, ADMIN_JWT_SECRET);
     const user = await User.findById(decoded.id).select('+tokenVersion role');
 
-    if (!user || user.role !== 'admin') {
+    if (!user || !ADMIN_ROLES.includes(normalizeRole(user.role))) {
       return null;
     }
 
@@ -72,7 +79,7 @@ const attachSocketServer = (httpServer, app) => {
     logger.info('Admin socket connected', { socketId: socket.id });
 
     socket.on(socketEvents.ADMIN_SUBSCRIBE, () => {
-      if (socket.data.user?.role !== 'admin') {
+      if (!ADMIN_ROLES.includes(normalizeRole(socket.data.user?.role))) {
         logger.warn('Rejected admin socket subscription', { socketId: socket.id });
         socket.emit('socket.error', { message: 'Admin access required' });
         socket.disconnect(true);
