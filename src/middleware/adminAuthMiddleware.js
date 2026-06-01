@@ -5,6 +5,12 @@ const { logger } = require('../utils/logger');
 const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET || 'default_admin_secret';
 const ADMIN_ROLES = ['admin', 'super-admin', 'product-manager', 'support'];
 
+const normalizeRole = role =>
+  String(role || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, '-');
+
 const createAdminToken = (user) => jwt.sign(
   {
     id: user._id,
@@ -22,7 +28,7 @@ const adminLogin = async (req, res, next) => {
     const { email, password } = req.body;
     const user = await User.findOne({ email }).select('+password');
 
-    if (!user || !ADMIN_ROLES.includes(user.role)) {
+    if (!user || !ADMIN_ROLES.includes(normalizeRole(user.role))) {
       logger.warn('Admin login failed: not found or not admin', { email });
       return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
     }
@@ -60,7 +66,7 @@ const adminMe = async (req, res, next) => {
   try {
     const userId = req.query.userId || req.userId;
     const user = await User.findById(userId).select('-password -refreshToken -otpCode -otpExpiresAt');
-    if (!user || user.role !== 'admin') {
+    if (!user || !ADMIN_ROLES.includes(normalizeRole(user.role))) {
       return res.status(404).json({ success: false, message: 'Admin not found' });
     }
     return res.json({ success: true, user });
@@ -127,14 +133,14 @@ const authorizeAdmin = async (req, res, next) => {
     const decoded = jwt.verify(token, ADMIN_JWT_SECRET);
 
     // Check if user has admin role
-    if (!ADMIN_ROLES.includes(decoded.role)) {
+    if (!ADMIN_ROLES.includes(normalizeRole(decoded.role))) {
       logger.warn('Admin role check failed', { userId: decoded.id });
       return res.status(403).json({ success: false, message: 'Admin access required' });
     }
 
     // Verify user still exists and is admin
     const currentUser = await User.findById(decoded.id).select('+tokenVersion role');
-    if (!currentUser || !ADMIN_ROLES.includes(currentUser.role)) {
+    if (!currentUser || !ADMIN_ROLES.includes(normalizeRole(currentUser.role))) {
       logger.warn('Admin user not found or role changed', { userId: decoded.id });
       return res.status(403).json({ success: false, message: 'Admin access required' });
     }
@@ -174,7 +180,7 @@ const authorizeAdmin = async (req, res, next) => {
 };
 
 const authorizeRoles = (...roles) => (req, res, next) => {
-  if (!roles.includes(req.user?.role)) {
+  if (!roles.includes(normalizeRole(req.user?.role))) {
     return res.status(403).json({
       success: false,
       message: 'Access denied',
@@ -184,4 +190,4 @@ const authorizeRoles = (...roles) => (req, res, next) => {
   return next();
 };
 
-module.exports = { adminLogin, adminMe, authorizeAdmin, authorizeRoles, ADMIN_ROLES };
+module.exports = { adminLogin, adminMe, authorizeAdmin, authorizeRoles, ADMIN_ROLES, normalizeRole };
