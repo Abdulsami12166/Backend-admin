@@ -16,6 +16,25 @@ const getAdminOrders = async (req, res, next) => {
   }
 };
 
+const getAdminTransactions = async (req, res, next) => {
+  try {
+    const transactions = await Order.find({
+      $or: [
+        { razorpayOrderId: { $ne: '' } },
+        { razorpayPaymentId: { $ne: '' } },
+        { paymentStatus: { $in: ['paid', 'failed', 'refunded'] } },
+      ],
+    })
+      .populate('user', 'name email phone role blocked')
+      .sort({ createdAt: -1 })
+      .select('user totalAmount paymentStatus paymentMethod paymentReference razorpayOrderId razorpayPaymentId transactionStatus transactionVerifiedAt orderStatus createdAt');
+
+    return sendSuccess(res, 200, 'Admin transactions fetched successfully', { transactions });
+  } catch (e) {
+    next(e);
+  }
+};
+
 const adminUpdateOrderStatus = async (req, res, next) => {
   try {
     const order = await Order.findById(req.params.id);
@@ -98,5 +117,5 @@ const adminCreateOrder = async (req, res, next) => {
   }
 };
 
-module.exports = { getAdminOrders, adminUpdateOrderStatus, adminDeleteOrder, adminCreateOrder };
+module.exports = { getAdminOrders, getAdminTransactions, adminUpdateOrderStatus, adminDeleteOrder, adminCreateOrder };
 

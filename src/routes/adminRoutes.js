@@ -9,6 +9,7 @@ const {
 
 const {
   getAdminOrders,
+  getAdminTransactions,
   adminUpdateOrderStatus,
   adminDeleteOrder,
   adminCreateOrder,
@@ -41,6 +42,7 @@ router.put('/products/:id', authorizeAdmin, authorizeRoles('admin', 'super-admin
 router.delete('/products/:id', authorizeAdmin, authorizeRoles('admin', 'super-admin'), adminDeleteProduct);
 
 router.get('/orders', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'product-manager', 'support'), getAdminOrders);
+router.get('/transactions', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'product-manager'), getAdminTransactions);
 router.post('/orders', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'product-manager'), adminCreateOrder);
 router.patch('/orders/:id/status', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'product-manager'), adminUpdateOrderStatus);
 router.delete('/orders/:id', authorizeAdmin, authorizeRoles('admin', 'super-admin'), adminDeleteOrder);

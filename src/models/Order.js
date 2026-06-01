@@ -33,6 +33,15 @@ const orderSchema = new mongoose.Schema(
     },
     paymentMethod: { type: String, default: 'card' },
     paymentReference: { type: String, default: '' },
+    razorpayOrderId: { type: String, default: '' },
+    razorpayPaymentId: { type: String, default: '' },
+    razorpaySignature: { type: String, default: '', select: false },
+    transactionStatus: {
+      type: String,
+      enum: ['pending', 'authorized', 'paid', 'failed'],
+      default: 'pending',
+    },
+    transactionVerifiedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
