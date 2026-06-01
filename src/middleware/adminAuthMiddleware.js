@@ -3,6 +3,7 @@ const User = require('../models/User');
 const { logger } = require('../utils/logger');
 
 const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET || 'default_admin_secret';
+const ADMIN_ROLES = ['admin', 'super-admin', 'product-manager', 'support'];
 
 const createAdminToken = (user) => jwt.sign(
   {
@@ -21,7 +22,7 @@ const adminLogin = async (req, res, next) => {
     const { email, password } = req.body;
     const user = await User.findOne({ email }).select('+password');
 
-    if (!user || user.role !== 'admin') {
+    if (!user || !ADMIN_ROLES.includes(user.role)) {
       logger.warn('Admin login failed: not found or not admin', { email });
       return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
     }
@@ -126,14 +127,14 @@ const authorizeAdmin = async (req, res, next) => {
     const decoded = jwt.verify(token, ADMIN_JWT_SECRET);
 
     // Check if user has admin role
-    if (decoded.role !== 'admin') {
+    if (!ADMIN_ROLES.includes(decoded.role)) {
       logger.warn('Admin role check failed', { userId: decoded.id });
       return res.status(403).json({ success: false, message: 'Admin access required' });
     }
 
     // Verify user still exists and is admin
     const currentUser = await User.findById(decoded.id).select('+tokenVersion role');
-    if (!currentUser || currentUser.role !== 'admin') {
+    if (!currentUser || !ADMIN_ROLES.includes(currentUser.role)) {
       logger.warn('Admin user not found or role changed', { userId: decoded.id });
       return res.status(403).json({ success: false, message: 'Admin access required' });
     }
@@ -172,4 +173,15 @@ const authorizeAdmin = async (req, res, next) => {
   }
 };
 
-module.exports = { adminLogin, adminMe, authorizeAdmin };
+const authorizeRoles = (...roles) => (req, res, next) => {
+  if (!roles.includes(req.user?.role)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied',
+    });
+  }
+
+  return next();
+};
+
+module.exports = { adminLogin, adminMe, authorizeAdmin, authorizeRoles, ADMIN_ROLES };

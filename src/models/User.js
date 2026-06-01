@@ -7,7 +7,11 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     phone: { type: String, trim: true },
     password: { type: String, required: true, minlength: 6, select: false },
-    role: { type: String, enum: ['user', 'seller', 'admin'], default: 'user' },
+    role: {
+      type: String,
+      enum: ['user', 'seller', 'admin', 'super-admin', 'product-manager', 'support'],
+      default: 'user',
+    },
     avatar: { type: String, default: '' },
     wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
     isVerified: { type: Boolean, default: false },

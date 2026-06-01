@@ -25,7 +25,7 @@ const {
 
 const { getAdminDashboardMetrics, getAdminActivities } = require('../controllers/admin/dashboardAdminController');
 
-const { adminLogin, adminMe, authorizeAdmin } = require('../middleware/adminAuthMiddleware');
+const { adminLogin, adminMe, authorizeAdmin, authorizeRoles } = require('../middleware/adminAuthMiddleware');
 
 const router = express.Router();
 
@@ -33,23 +33,23 @@ router.post('/login', adminLogin);
 router.get('/me', authorizeAdmin, adminMe);
 
 router.get('/dashboard/metrics', authorizeAdmin, getAdminDashboardMetrics);
-router.get('/activities', authorizeAdmin, getAdminActivities);
+router.get('/activities', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'support'), getAdminActivities);
 
-router.get('/products', authorizeAdmin, getAdminProducts);
-router.post('/products', authorizeAdmin, adminCreateProduct);
-router.put('/products/:id', authorizeAdmin, adminUpdateProduct);
-router.delete('/products/:id', authorizeAdmin, adminDeleteProduct);
+router.get('/products', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'product-manager'), getAdminProducts);
+router.post('/products', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'product-manager'), adminCreateProduct);
+router.put('/products/:id', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'product-manager'), adminUpdateProduct);
+router.delete('/products/:id', authorizeAdmin, authorizeRoles('admin', 'super-admin'), adminDeleteProduct);
 
-router.get('/orders', authorizeAdmin, getAdminOrders);
-router.post('/orders', authorizeAdmin, adminCreateOrder);
-router.patch('/orders/:id/status', authorizeAdmin, adminUpdateOrderStatus);
-router.delete('/orders/:id', authorizeAdmin, adminDeleteOrder);
+router.get('/orders', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'product-manager', 'support'), getAdminOrders);
+router.post('/orders', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'product-manager'), adminCreateOrder);
+router.patch('/orders/:id/status', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'product-manager'), adminUpdateOrderStatus);
+router.delete('/orders/:id', authorizeAdmin, authorizeRoles('admin', 'super-admin'), adminDeleteOrder);
 
-router.get('/users', authorizeAdmin, getAdminUsers);
-router.get('/users/:id/orders', authorizeAdmin, getAdminUserOrders);
-router.delete('/users/:id', authorizeAdmin, adminDeleteUser);
-router.post('/users/:id/block', authorizeAdmin, adminBlockUser);
-router.post('/users/:id/unblock', authorizeAdmin, adminUnblockUser);
-router.post('/users/:id/logout', authorizeAdmin, adminForceLogoutUser);
+router.get('/users', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'support'), getAdminUsers);
+router.get('/users/:id/orders', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'support'), getAdminUserOrders);
+router.delete('/users/:id', authorizeAdmin, authorizeRoles('admin', 'super-admin'), adminDeleteUser);
+router.post('/users/:id/block', authorizeAdmin, authorizeRoles('admin', 'super-admin'), adminBlockUser);
+router.post('/users/:id/unblock', authorizeAdmin, authorizeRoles('admin', 'super-admin'), adminUnblockUser);
+router.post('/users/:id/logout', authorizeAdmin, authorizeRoles('admin', 'super-admin'), adminForceLogoutUser);
 
 module.exports = router;
