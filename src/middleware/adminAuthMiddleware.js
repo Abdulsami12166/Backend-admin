@@ -146,7 +146,7 @@ const authorizeAdmin = async (req, res, next) => {
     }
 
     // Check token version for token invalidation
-    if (currentUser.tokenVersion !== decoded.tokenVersion) {
+    if ((currentUser.tokenVersion || 0) !== (decoded.tokenVersion || 0)) {
       logger.warn('Admin token version mismatch', { userId: decoded.id });
       return res.status(401).json({ success: false, message: 'Invalid or expired token' });
     }
