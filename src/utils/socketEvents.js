@@ -7,6 +7,8 @@ const socketEvents = {
   DOMAIN: {
     ORDER_CREATED: 'order.created',
     ORDER_UPDATED: 'order.updated',
+    PRODUCT_CREATED: 'product.created',
+    PRODUCT_UPDATED: 'product.updated',
     ADMIN_FORCE_LOGOUT: 'admin.user.force_logout',
   },
   LEGACY: {

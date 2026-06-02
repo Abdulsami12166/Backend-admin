@@ -1,6 +1,131 @@
 const Product = require('../../models/Product');
 const { sendSuccess, sendError } = require('../../utils/responseHandler');
 const { logger } = require('../../utils/logger');
+const { uploadProductImages } = require('../../services/productImageService');
+const { emitToAdmins, socketEvents } = require('../../utils/eventBus');
+
+const CATEGORY_CONFIG = {
+  Mobiles: {
+    subcategories: ['Gaming Phones', 'Camera Phones', 'Performance Phones', 'Battery Phones', 'Budget Phones', 'Flagship Phones'],
+    attributes: ['ram', 'storage', 'battery', 'camera', 'processor'],
+  },
+  Laptops: {
+    subcategories: ['Gaming Laptops', 'Performance Laptops', 'Student Laptops', 'Business Laptops', 'Creator Laptops', 'Budget Laptops'],
+    attributes: ['processor', 'ram', 'storage', 'gpu', 'displaySize'],
+  },
+  Fashion: {
+    subcategories: ['Men', 'Women', 'Kids', 'Footwear', 'Traditional', 'Casual', 'Formal'],
+    attributes: ['size', 'color', 'material', 'brand'],
+    sizes: ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
+  },
+  Accessories: {
+    subcategories: ['Watches', 'Headphones', 'Chargers', 'Power Banks', 'Cases'],
+    attributes: ['brand', 'color', 'material'],
+  },
+  Gaming: {
+    subcategories: ['Gaming Consoles', 'Gaming Accessories', 'Gaming Laptops', 'Gaming Phones'],
+    attributes: ['platform', 'storage', 'edition'],
+  },
+  Electronics: {
+    subcategories: ['Audio', 'Cameras', 'Wearables', 'Smart Home', 'Storage'],
+    attributes: ['brand', 'model', 'warranty'],
+  },
+};
+
+const parseMaybeJson = (value, fallback) => {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value !== 'string') return value;
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+
+const cleanObject = value =>
+  Object.entries(value || {}).reduce((next, [key, rawValue]) => {
+    if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
+      next[key] = rawValue;
+    }
+    return next;
+  }, {});
+
+const normalizeArray = value => {
+  if (Array.isArray(value)) return value.map(item => String(item).trim()).filter(Boolean);
+  if (typeof value === 'string') return value.split(',').map(item => item.trim()).filter(Boolean);
+  return [];
+};
+
+const validateProductPayload = (body, files = [], existingProduct = null) => {
+  const title = String(body.title || body.name || '').trim();
+  const description = String(body.description || '').trim();
+  const category = String(body.category || '').trim();
+  const subcategory = String(body.subcategory || body.subCategory || '').trim();
+  const price = Number(body.price);
+  const discountedPrice = body.discountedPrice === undefined || body.discountedPrice === ''
+    ? undefined
+    : Number(body.discountedPrice);
+  const stock = body.stock === undefined || body.stock === '' ? 0 : Number(body.stock);
+
+  if (!title) throw Object.assign(new Error('Product title is required'), { statusCode: 400 });
+  if (!description) throw Object.assign(new Error('Product description is required'), { statusCode: 400 });
+  if (!CATEGORY_CONFIG[category]) throw Object.assign(new Error('Unsupported product category'), { statusCode: 400 });
+  if (!CATEGORY_CONFIG[category].subcategories.includes(subcategory)) {
+    throw Object.assign(new Error('Unsupported product subcategory'), { statusCode: 400 });
+  }
+  if (!Number.isFinite(price) || price < 0) throw Object.assign(new Error('Valid product price is required'), { statusCode: 400 });
+  if (discountedPrice !== undefined && (!Number.isFinite(discountedPrice) || discountedPrice < 0)) {
+    throw Object.assign(new Error('Discounted price must be a positive number'), { statusCode: 400 });
+  }
+  if (!Number.isFinite(stock) || stock < 0) throw Object.assign(new Error('Stock must be a positive number'), { statusCode: 400 });
+  if (!files.length && !existingProduct?.images?.length) {
+    throw Object.assign(new Error('At least one product image is required'), { statusCode: 400 });
+  }
+
+  const rawAttributes = cleanObject(parseMaybeJson(body.attributes, {}));
+  const allowedAttributes = new Set(CATEGORY_CONFIG[category].attributes);
+  const attributes = {};
+  for (const key of allowedAttributes) {
+    if (rawAttributes[key] !== undefined && rawAttributes[key] !== '') {
+      attributes[key] = rawAttributes[key];
+    }
+  }
+
+  const specifications = cleanObject(parseMaybeJson(body.specifications, {}));
+  const inventory = {
+    ...cleanObject(parseMaybeJson(body.inventory, {})),
+    stock,
+    sku: String(body.sku || parseMaybeJson(body.inventory, {})?.sku || '').trim(),
+  };
+
+  const variants = Array.isArray(parseMaybeJson(body.variants, []))
+    ? parseMaybeJson(body.variants, []).map(cleanObject).filter(item => Object.keys(item).length)
+    : [];
+
+  return {
+    title,
+    name: title,
+    description,
+    brand: String(body.brand || attributes.brand || '').trim(),
+    category,
+    subCategory: subcategory,
+    subcategory,
+    type: String(body.type || subcategory).trim(),
+    price,
+    discountedPrice,
+    stock,
+    sizes: category === 'Fashion' ? normalizeArray(attributes.size || body.sizes) : [],
+    material: category === 'Fashion' ? String(attributes.material || body.material || '').trim() : '',
+    color: category === 'Fashion' ? String(attributes.color || body.color || '').trim() : '',
+    tags: normalizeArray(body.tags),
+    attributes,
+    specifications,
+    inventory,
+    variants,
+    isPublished: String(body.isPublished ?? 'true') !== 'false',
+  };
+};
 
 const slugify = value =>
   String(value || '')
@@ -20,17 +145,21 @@ const getAdminProducts = async (req, res, next) => {
 
 const adminCreateProduct = async (req, res, next) => {
   try {
-    const baseSlug = slugify(req.body.slug || req.body.title);
+    const productPayload = validateProductPayload(req.body, req.files);
+    const uploadedImages = await uploadProductImages(req.files || []);
+    const baseSlug = slugify(req.body.slug || productPayload.title);
     const product = await Product.create({
-      ...req.body,
+      ...productPayload,
       slug: `${baseSlug || 'product'}-${Date.now()}`,
       seller: req.body.seller || req.userId,
-      images: Array.isArray(req.body.images)
-        ? req.body.images.filter(Boolean)
-        : req.body.image
-          ? [req.body.image]
-          : [],
-      isPublished: req.body.isPublished ?? true,
+      images: uploadedImages.map(image => image.url),
+      imageMetadata: uploadedImages,
+    });
+
+    emitToAdmins(req.app, socketEvents.DOMAIN.PRODUCT_CREATED, {
+      productId: String(product._id),
+      title: product.title,
+      category: product.category,
     });
 
     logger.info('Admin created product', { productId: product._id });
@@ -45,8 +174,20 @@ const adminUpdateProduct = async (req, res, next) => {
     const product = await Product.findById(req.params.id);
     if (!product) return sendError(res, 404, 'Product not found');
 
-    Object.assign(product, req.body);
+    const productPayload = validateProductPayload(req.body, req.files || [], product);
+    const uploadedImages = await uploadProductImages(req.files || []);
+    Object.assign(product, productPayload);
+    if (uploadedImages.length) {
+      product.images = uploadedImages.map(image => image.url);
+      product.imageMetadata = uploadedImages;
+    }
     await product.save();
+
+    emitToAdmins(req.app, socketEvents.DOMAIN.PRODUCT_UPDATED, {
+      productId: String(product._id),
+      title: product.title,
+      category: product.category,
+    });
 
     return sendSuccess(res, 200, 'Product updated successfully', { product });
   } catch (e) {

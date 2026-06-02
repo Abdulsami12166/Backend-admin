@@ -27,6 +27,7 @@ const {
 const { getAdminDashboardMetrics, getAdminActivities } = require('../controllers/admin/dashboardAdminController');
 
 const { adminLogin, adminMe, authorizeAdmin, authorizeRoles } = require('../middleware/adminAuthMiddleware');
+const { uploadProductImages } = require('../middleware/productUploadMiddleware');
 
 const router = express.Router();
 
@@ -37,10 +38,10 @@ router.get('/me', authorizeAdmin, adminMe);
 router.get('/dashboard/metrics', authorizeAdmin, getAdminDashboardMetrics);
 router.get('/activities', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'support'), getAdminActivities);
 
-router.get('/products', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'product-manager'), getAdminProducts);
-router.post('/products', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'product-manager'), adminCreateProduct);
-router.put('/products/:id', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'product-manager'), adminUpdateProduct);
-router.delete('/products/:id', authorizeAdmin, authorizeRoles('admin', 'super-admin'), adminDeleteProduct);
+router.get('/products', authorizeAdmin, authorizeRoles('super-admin', 'product-manager'), getAdminProducts);
+router.post('/products', authorizeAdmin, authorizeRoles('super-admin', 'product-manager'), uploadProductImages, adminCreateProduct);
+router.put('/products/:id', authorizeAdmin, authorizeRoles('super-admin', 'product-manager'), uploadProductImages, adminUpdateProduct);
+router.delete('/products/:id', authorizeAdmin, authorizeRoles('super-admin', 'product-manager'), adminDeleteProduct);
 
 router.get('/orders', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'product-manager', 'support'), getAdminOrders);
 router.get('/transactions', authorizeAdmin, authorizeRoles('admin', 'super-admin', 'product-manager'), getAdminTransactions);
