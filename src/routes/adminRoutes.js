@@ -31,6 +31,7 @@ const { adminLogin, adminMe, authorizeAdmin, authorizeRoles } = require('../midd
 const router = express.Router();
 
 router.post('/login', adminLogin);
+router.post('/auth/login', adminLogin);
 router.get('/me', authorizeAdmin, adminMe);
 
 router.get('/dashboard/metrics', authorizeAdmin, getAdminDashboardMetrics);
