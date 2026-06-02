@@ -8,15 +8,11 @@ require('dotenv').config();
 const adminRoutes = require('./routes/adminRoutes');
 const { requestLogger } = require('./middleware/requestLogger');
 const { notFound, errorHandler } = require('./middleware/errorMiddleware');
+const { corsOptions } = require('./utils/corsOptions');
 
 const app = express();
 
-app.use(
-  cors({
-    origin: process.env.CLIENT_URL || '*',
-    credentials: true,
-  }),
-);
+app.use(cors(corsOptions));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

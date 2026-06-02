@@ -2,6 +2,7 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 
 const User = require('../models/User');
+const { corsOptions } = require('./corsOptions');
 const { logger } = require('./logger');
 const { socketEvents } = require('./socketEvents');
 
@@ -44,10 +45,7 @@ const resolveSocketUser = async socket => {
 
 const attachSocketServer = (httpServer, app) => {
   const io = new Server(httpServer, {
-    cors: {
-      origin: process.env.CLIENT_URL || process.env.ADMIN_CLIENT_URL || '*',
-      credentials: true,
-    },
+    cors: corsOptions,
   });
 
   io.use(async (socket, next) => {
