@@ -6,7 +6,7 @@ const connectDB = require('./config/db');
 const { logger } = require('./utils/logger');
 const { attachSocketServer } = require('./utils/eventBus');
 
-const port = process.env.PORT || 5001;
+const port = process.env.PORT || 5002;
 
 const startServer = async () => {
   try {
