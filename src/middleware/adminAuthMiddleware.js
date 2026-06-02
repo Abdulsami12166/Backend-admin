@@ -26,7 +26,7 @@ const createAdminToken = (user) => jwt.sign(
 const adminLogin = async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ email }).select('+password +tokenVersion');
 
     if (!user || !ADMIN_ROLES.includes(normalizeRole(user.role))) {
       logger.warn('Admin login failed: not found or not admin', { email });
