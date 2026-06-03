@@ -1,20 +1,17 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { logger } = require('../utils/logger');
+const { ADMIN_ROLES, normalizeRole } = require('../config/rbac');
+const { getRolePermissions, hasPermission } = require('../services/rbacService');
 
 const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET || 'default_admin_secret';
-const ADMIN_ROLES = ['admin', 'super-admin', 'product-manager', 'support'];
+const SUPPORTED_ADMIN_ROLES = [...ADMIN_ROLES, 'admin'];
 
-const normalizeRole = role =>
-  String(role || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[_\s]+/g, '-');
-
-const createAdminToken = (user) => jwt.sign(
+const createAdminToken = (user, permissions) => jwt.sign(
   {
     id: user._id,
     role: user.role,
+    permissions,
     tokenVersion: user.tokenVersion || 0,
   },
   ADMIN_JWT_SECRET,
@@ -28,7 +25,7 @@ const adminLogin = async (req, res, next) => {
     const { email, password } = req.body;
     const user = await User.findOne({ email }).select('+password +tokenVersion');
 
-    if (!user || !ADMIN_ROLES.includes(normalizeRole(user.role))) {
+    if (!user || !SUPPORTED_ADMIN_ROLES.includes(normalizeRole(user.role))) {
       logger.warn('Admin login failed: not found or not admin', { email });
       return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
     }
@@ -42,7 +39,8 @@ const adminLogin = async (req, res, next) => {
     user.lastLoginAt = new Date();
     await user.save();
 
-    const token = createAdminToken(user);
+    const permissions = await getRolePermissions(user.role);
+    const token = createAdminToken(user, permissions);
 
     logger.info('Admin logged in', { userId: user._id, email: user.email });
 
@@ -55,6 +53,7 @@ const adminLogin = async (req, res, next) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        permissions,
       },
     });
   } catch (error) {
@@ -66,10 +65,11 @@ const adminMe = async (req, res, next) => {
   try {
     const userId = req.query.userId || req.userId;
     const user = await User.findById(userId).select('-password -refreshToken -otpCode -otpExpiresAt');
-    if (!user || !ADMIN_ROLES.includes(normalizeRole(user.role))) {
+    if (!user || !SUPPORTED_ADMIN_ROLES.includes(normalizeRole(user.role))) {
       return res.status(404).json({ success: false, message: 'Admin not found' });
     }
-    return res.json({ success: true, user });
+    const permissions = await getRolePermissions(user.role);
+    return res.json({ success: true, user: { ...user.toObject(), permissions } });
   } catch (error) {
     next(error);
   }
@@ -133,14 +133,14 @@ const authorizeAdmin = async (req, res, next) => {
     const decoded = jwt.verify(token, ADMIN_JWT_SECRET);
 
     // Check if user has admin role
-    if (!ADMIN_ROLES.includes(normalizeRole(decoded.role))) {
+    if (!SUPPORTED_ADMIN_ROLES.includes(normalizeRole(decoded.role))) {
       logger.warn('Admin role check failed', { userId: decoded.id });
       return res.status(403).json({ success: false, message: 'Admin access required' });
     }
 
     // Verify user still exists and is admin
     const currentUser = await User.findById(decoded.id).select('+tokenVersion role');
-    if (!currentUser || !ADMIN_ROLES.includes(normalizeRole(currentUser.role))) {
+    if (!currentUser || !SUPPORTED_ADMIN_ROLES.includes(normalizeRole(currentUser.role))) {
       logger.warn('Admin user not found or role changed', { userId: decoded.id });
       return res.status(403).json({ success: false, message: 'Admin access required' });
     }
@@ -190,4 +190,27 @@ const authorizeRoles = (...roles) => (req, res, next) => {
   return next();
 };
 
-module.exports = { adminLogin, adminMe, authorizeAdmin, authorizeRoles, ADMIN_ROLES, normalizeRole };
+const authorizePermission = permission => async (req, res, next) => {
+  try {
+    if (await hasPermission(req.user?.role, permission)) {
+      return next();
+    }
+
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied',
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+module.exports = {
+  adminLogin,
+  adminMe,
+  authorizeAdmin,
+  authorizePermission,
+  authorizeRoles,
+  ADMIN_ROLES: SUPPORTED_ADMIN_ROLES,
+  normalizeRole,
+};
