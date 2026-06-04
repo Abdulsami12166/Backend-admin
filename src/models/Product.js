@@ -25,11 +25,13 @@ const variantSchema = new mongoose.Schema(
   {
     name: { type: String, trim: true },
     value: { type: String, trim: true },
+    attributes: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} },
     price: { type: Number, min: 0 },
     stock: { type: Number, min: 0 },
     sku: { type: String, trim: true },
+    images: [{ type: String, trim: true }],
   },
-  { _id: false },
+  { timestamps: true },
 );
 
 const productSchema = new mongoose.Schema(

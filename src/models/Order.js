@@ -40,6 +40,7 @@ const orderSchema = new mongoose.Schema(
         'packed',
         'shipping',
         'near-delivery',
+        'out-for-delivery',
         'shipped',
         'delivered',
         'cancelled',

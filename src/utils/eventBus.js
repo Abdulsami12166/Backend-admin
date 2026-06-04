@@ -7,7 +7,8 @@ const { logger } = require('./logger');
 const { socketEvents } = require('./socketEvents');
 
 const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET || 'default_admin_secret';
-const ADMIN_ROLES = ['admin', 'super-admin', 'product-manager', 'support'];
+const USER_JWT_SECRET = process.env.JWT_SECRET || process.env.ADMIN_JWT_SECRET || 'default_user_secret';
+const ADMIN_ROLES = ['admin', 'super-admin', 'product-manager', 'inventory-manager', 'support'];
 
 const normalizeRole = role =>
   String(role || '')
@@ -26,10 +27,15 @@ const resolveSocketUser = async socket => {
   if (!token) return null;
 
   try {
-    const decoded = jwt.verify(token, ADMIN_JWT_SECRET);
-    const user = await User.findById(decoded.id).select('+tokenVersion role');
+    let decoded;
+    try {
+      decoded = jwt.verify(token, ADMIN_JWT_SECRET);
+    } catch {
+      decoded = jwt.verify(token, USER_JWT_SECRET);
+    }
+    const user = await User.findById(decoded.id).select('+tokenVersion role blocked');
 
-    if (!user || !ADMIN_ROLES.includes(normalizeRole(user.role))) {
+    if (!user || user.blocked) {
       return null;
     }
 
@@ -75,6 +81,9 @@ const attachSocketServer = (httpServer, app) => {
 
   io.on('connection', socket => {
     logger.info('Admin socket connected', { socketId: socket.id });
+    if (socket.data.user?.id) {
+      socket.join(socketEvents.ROOMS.user(socket.data.user.id));
+    }
 
     socket.on(socketEvents.ADMIN_SUBSCRIBE, () => {
       if (!ADMIN_ROLES.includes(normalizeRole(socket.data.user?.role))) {
@@ -105,8 +114,22 @@ const emitToAdmins = (app, event, payload) => {
   io.to(socketEvents.ROOMS.ADMINS).emit(event, payload);
 };
 
+const emitToUser = (app, userId, event, payload) => {
+  const io = getIo(app);
+  if (!io || !userId) return;
+  io.to(socketEvents.ROOMS.user(String(userId))).emit(event, payload);
+};
+
+const emitToAll = (app, event, payload) => {
+  const io = getIo(app);
+  if (!io) return;
+  io.emit(event, payload);
+};
+
 module.exports = {
   attachSocketServer,
   emitToAdmins,
+  emitToUser,
+  emitToAll,
   socketEvents,
 };

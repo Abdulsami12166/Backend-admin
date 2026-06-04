@@ -2,7 +2,7 @@ const Product = require('../../models/Product');
 const { sendSuccess, sendError } = require('../../utils/responseHandler');
 const { logger } = require('../../utils/logger');
 const { uploadProductImages } = require('../../services/productImageService');
-const { emitToAdmins, socketEvents } = require('../../utils/eventBus');
+const { emitToAdmins, emitToAll, socketEvents } = require('../../utils/eventBus');
 
 const CATEGORY_CONFIG = {
   Mobiles: {
@@ -44,7 +44,7 @@ const parseMaybeJson = (value, fallback) => {
 };
 
 const cleanObject = value =>
-  Object.entries(value || {}).reduce((next, [key, rawValue]) => {
+  (value instanceof Map ? Array.from(value.entries()) : Object.entries(value || {})).reduce((next, [key, rawValue]) => {
     if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
       next[key] = rawValue;
     }
@@ -84,13 +84,7 @@ const validateProductPayload = (body, files = [], existingProduct = null) => {
   }
 
   const rawAttributes = cleanObject(parseMaybeJson(body.attributes, {}));
-  const allowedAttributes = new Set(CATEGORY_CONFIG[category].attributes);
-  const attributes = {};
-  for (const key of allowedAttributes) {
-    if (rawAttributes[key] !== undefined && rawAttributes[key] !== '') {
-      attributes[key] = rawAttributes[key];
-    }
-  }
+  const attributes = rawAttributes;
 
   const specifications = cleanObject(parseMaybeJson(body.specifications, {}));
   const inventory = {
@@ -156,11 +150,13 @@ const adminCreateProduct = async (req, res, next) => {
       imageMetadata: uploadedImages,
     });
 
-    emitToAdmins(req.app, socketEvents.DOMAIN.PRODUCT_CREATED, {
+    const eventPayload = {
       productId: String(product._id),
       title: product.title,
       category: product.category,
-    });
+    };
+    emitToAdmins(req.app, socketEvents.DOMAIN.PRODUCT_CREATED, eventPayload);
+    emitToAll(req.app, socketEvents.DOMAIN.PRODUCT_CREATED, eventPayload);
 
     logger.info('Admin created product', { productId: product._id });
     return sendSuccess(res, 201, 'Product created successfully', { product });
@@ -183,11 +179,7 @@ const adminUpdateProduct = async (req, res, next) => {
     }
     await product.save();
 
-    emitToAdmins(req.app, socketEvents.DOMAIN.PRODUCT_UPDATED, {
-      productId: String(product._id),
-      title: product.title,
-      category: product.category,
-    });
+    emitProductUpdated(req, product);
 
     return sendSuccess(res, 200, 'Product updated successfully', { product });
   } catch (e) {
@@ -238,11 +230,96 @@ const adminUpdateInventory = async (req, res, next) => {
   }
 };
 
+const normalizeVariantPayload = body => {
+  const attributes = cleanObject(parseMaybeJson(body.attributes, {}));
+  const images = normalizeArray(body.images);
+  const price = body.price === undefined || body.price === '' ? undefined : Number(body.price);
+  const stock = body.stock === undefined || body.stock === '' ? 0 : Number(body.stock);
+
+  if (price !== undefined && (!Number.isFinite(price) || price < 0)) {
+    throw Object.assign(new Error('Variant price must be a positive number'), { statusCode: 400 });
+  }
+  if (!Number.isFinite(stock) || stock < 0) {
+    throw Object.assign(new Error('Variant stock must be a positive number'), { statusCode: 400 });
+  }
+
+  return cleanObject({
+    name: String(body.name || '').trim(),
+    value: String(body.value || '').trim(),
+    attributes,
+    price,
+    stock,
+    sku: String(body.sku || '').trim(),
+    images,
+  });
+};
+
+const emitProductUpdated = (req, product) => {
+  const payload = {
+    productId: String(product._id),
+    title: product.title,
+    category: product.category,
+    stock: product.stock,
+    variants: product.variants,
+  };
+  emitToAdmins(req.app, socketEvents.DOMAIN.PRODUCT_UPDATED, payload);
+  emitToAll(req.app, socketEvents.DOMAIN.PRODUCT_UPDATED, payload);
+};
+
+const adminCreateVariant = async (req, res, next) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return sendError(res, 404, 'Product not found');
+
+    product.variants.push(normalizeVariantPayload(req.body));
+    await product.save();
+    emitProductUpdated(req, product);
+    return sendSuccess(res, 201, 'Variant created successfully', { product, variant: product.variants.at(-1) });
+  } catch (e) {
+    next(e);
+  }
+};
+
+const adminUpdateVariant = async (req, res, next) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return sendError(res, 404, 'Product not found');
+    const variant = product.variants.id(req.params.variantId);
+    if (!variant) return sendError(res, 404, 'Variant not found');
+
+    Object.assign(variant, normalizeVariantPayload({ ...variant.toObject(), ...req.body }));
+    await product.save();
+    emitProductUpdated(req, product);
+    return sendSuccess(res, 200, 'Variant updated successfully', { product, variant });
+  } catch (e) {
+    next(e);
+  }
+};
+
+const adminDeleteVariant = async (req, res, next) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return sendError(res, 404, 'Product not found');
+    const variant = product.variants.id(req.params.variantId);
+    if (!variant) return sendError(res, 404, 'Variant not found');
+
+    variant.deleteOne();
+    await product.save();
+    emitProductUpdated(req, product);
+    return sendSuccess(res, 200, 'Variant deleted successfully', { product });
+  } catch (e) {
+    next(e);
+  }
+};
+
 module.exports = {
   getAdminProducts,
   adminCreateProduct,
   adminUpdateProduct,
   adminDeleteProduct,
   adminUpdateInventory,
+  adminCreateVariant,
+  adminUpdateVariant,
+  adminDeleteVariant,
 };
 

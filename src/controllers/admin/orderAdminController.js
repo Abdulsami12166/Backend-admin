@@ -2,13 +2,15 @@ const Order = require('../../models/Order');
 const UserActivity = require('../../models/UserActivity');
 const { sendSuccess, sendError } = require('../../utils/responseHandler');
 const { logger } = require('../../utils/logger');
-const { emitToAdmins, socketEvents } = require('../../utils/eventBus');
+const { emitToAdmins, emitToUser, socketEvents } = require('../../utils/eventBus');
 
 const ORDER_STATUS_LABELS = {
   'order-confirmed': 'Order Confirmed',
   packed: 'Packed',
-  shipping: 'Shipping',
-  'near-delivery': 'Near Delivery',
+  shipping: 'Shipped',
+  shipped: 'Shipped',
+  'near-delivery': 'Out For Delivery',
+  'out-for-delivery': 'Out For Delivery',
   delivered: 'Delivered',
 };
 
@@ -20,6 +22,7 @@ const ALLOWED_ORDER_STATUSES = [
   'packed',
   'shipping',
   'near-delivery',
+  'out-for-delivery',
   'shipped',
   'delivered',
   'cancelled',
@@ -102,6 +105,7 @@ const adminUpdateOrderStatus = async (req, res, next) => {
 
     emitToAdmins(req.app, socketEvents.LEGACY.ORDER_STATUS_CHANGED, payload);
     emitToAdmins(req.app, socketEvents.DOMAIN.ORDER_UPDATED, payload);
+    emitToUser(req.app, order.user, socketEvents.DOMAIN.ORDER_UPDATED, payload);
 
     return sendSuccess(res, 200, 'Order status updated successfully', { order });
   } catch (e) {
