@@ -33,7 +33,10 @@ const adminLogin = async (req, res, next) => {
 
     if (user.blocked) {
       logger.warn('Blocked admin attempted login', { email: user.email });
-      return res.status(403).json({ success: false, message: 'Admin account blocked' });
+      return res.status(403).json({
+        success: false,
+        message: 'Your account has been blocked by an administrator',
+      });
     }
 
     const passOk = await user.comparePassword(password);
@@ -146,7 +149,7 @@ const authorizeAdmin = async (req, res, next) => {
     }
 
     // Verify user still exists and is admin
-    const currentUser = await User.findById(decoded.id).select('+tokenVersion role');
+    const currentUser = await User.findById(decoded.id).select('+tokenVersion role blocked');
     if (!currentUser || !SUPPORTED_ADMIN_ROLES.includes(normalizeRole(currentUser.role))) {
       logger.warn('Admin user not found or role changed', { userId: decoded.id });
       return res.status(403).json({ success: false, message: 'Admin access required' });
@@ -155,7 +158,10 @@ const authorizeAdmin = async (req, res, next) => {
     // Blocked admin users cannot access APIs (including re-login)
     if (currentUser.blocked) {
       logger.warn('Blocked admin attempted auth', { userId: decoded.id, email: currentUser.email });
-      return res.status(403).json({ success: false, message: 'Admin account blocked' });
+      return res.status(403).json({
+        success: false,
+        message: 'Your account has been blocked by an administrator',
+      });
     }
 
 

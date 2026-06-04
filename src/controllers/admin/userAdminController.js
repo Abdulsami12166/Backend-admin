@@ -160,10 +160,12 @@ const adminDeleteUser = async (req, res, next) => {
 
 const adminBlockUser = async (req, res, next) => {
   try {
-    const user = await User.findById(req.params.id);
+    const user = await User.findById(req.params.id).select('+refreshToken +tokenVersion');
     if (!user) return sendError(res, 404, 'User not found');
 
     user.blocked = true;
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
+    user.refreshToken = undefined;
     await user.save();
 
     await UserActivity.create({
