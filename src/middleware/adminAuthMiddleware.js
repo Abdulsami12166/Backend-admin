@@ -23,15 +23,22 @@ const createAdminToken = (user, permissions) => jwt.sign(
 const adminLogin = async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email }).select('+password +tokenVersion');
+    const user = await User.findOne({ email }).select('+password +tokenVersion +blocked');
 
     if (!user || !SUPPORTED_ADMIN_ROLES.includes(normalizeRole(user.role))) {
+
       logger.warn('Admin login failed: not found or not admin', { email });
       return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
     }
 
+    if (user.blocked) {
+      logger.warn('Blocked admin attempted login', { email: user.email });
+      return res.status(403).json({ success: false, message: 'Admin account blocked' });
+    }
+
     const passOk = await user.comparePassword(password);
     if (!passOk) {
+
       logger.warn('Admin login failed: wrong password', { email, userId: user._id });
       return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
     }
@@ -145,11 +152,19 @@ const authorizeAdmin = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Admin access required' });
     }
 
+    // Blocked admin users cannot access APIs (including re-login)
+    if (currentUser.blocked) {
+      logger.warn('Blocked admin attempted auth', { userId: decoded.id, email: currentUser.email });
+      return res.status(403).json({ success: false, message: 'Admin account blocked' });
+    }
+
+
     // Check token version for token invalidation
     if ((currentUser.tokenVersion || 0) !== (decoded.tokenVersion || 0)) {
       logger.warn('Admin token version mismatch', { userId: decoded.id });
       return res.status(401).json({ success: false, message: 'Invalid or expired token' });
     }
+
 
     // Attach user info to request
     req.user = decoded;
