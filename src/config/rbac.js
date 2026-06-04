@@ -1,4 +1,4 @@
-const ADMIN_ROLES = ['super-admin', 'product-manager', 'support'];
+const ADMIN_ROLES = ['super-admin', 'product-manager', 'inventory-manager', 'support'];
 
 const PERMISSIONS = [
   'dashboard:view',
@@ -35,6 +35,13 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'orders:view',
     'transactions:view',
     'analytics:view',
+  ],
+  'inventory-manager': [
+    'dashboard:view',
+    'products:view',
+    'inventory:manage',
+    'orders:view',
+    'orders:update',
   ],
   support: ['dashboard:view', 'users:view', 'orders:view', 'activity:view'],
 };

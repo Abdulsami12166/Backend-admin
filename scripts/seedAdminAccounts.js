@@ -9,18 +9,21 @@ const accounts = [
     email: 'superadmin@company.com',
     role: 'super-admin',
     passwordEnv: 'SUPER_ADMIN_PASSWORD',
+    defaultPassword: 'SuperAdmin@123',
   },
   {
     name: 'Product Manager',
     email: 'products@company.com',
     role: 'product-manager',
     passwordEnv: 'PRODUCT_MANAGER_PASSWORD',
+    defaultPassword: 'ProductManager@123',
   },
   {
     name: 'Support Admin',
     email: 'support@company.com',
     role: 'support',
     passwordEnv: 'SUPPORT_ADMIN_PASSWORD',
+    defaultPassword: 'SupportAdmin@123',
   },
 ];
 
@@ -30,18 +33,12 @@ async function seedAdminAccounts() {
     throw new Error('MONGO_URI is required');
   }
 
-  for (const account of accounts) {
-    if (!process.env[account.passwordEnv]) {
-      throw new Error(`${account.passwordEnv} is required`);
-    }
-  }
-
   await mongoose.connect(mongoUri);
 
   const results = [];
   for (const account of accounts) {
     const user = await User.findOne({email: account.email}).select('+password +tokenVersion');
-    const password = process.env[account.passwordEnv];
+    const password = process.env[account.passwordEnv] || account.defaultPassword;
 
     if (user) {
       user.name = account.name;

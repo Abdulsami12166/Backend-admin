@@ -5,6 +5,7 @@ const {
   adminCreateProduct,
   adminUpdateProduct,
   adminDeleteProduct,
+  adminUpdateInventory,
 } = require('../controllers/admin/productAdminController');
 
 const {
@@ -51,6 +52,7 @@ router.get('/activities', authorizeAdmin, authorizePermission('activity:view'), 
 router.get('/products', authorizeAdmin, authorizePermission('products:view'), getAdminProducts);
 router.post('/products', authorizeAdmin, authorizePermission('products:create'), uploadProductImages, adminCreateProduct);
 router.put('/products/:id', authorizeAdmin, authorizePermission('products:create'), uploadProductImages, adminUpdateProduct);
+router.patch('/products/:id/inventory', authorizeAdmin, authorizePermission('inventory:manage'), adminUpdateInventory);
 router.delete('/products/:id', authorizeAdmin, authorizePermission('products:delete'), adminDeleteProduct);
 
 router.get('/orders', authorizeAdmin, authorizePermission('orders:view'), getAdminOrders);

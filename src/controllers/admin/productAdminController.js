@@ -207,10 +207,42 @@ const adminDeleteProduct = async (req, res, next) => {
   }
 };
 
+const adminUpdateInventory = async (req, res, next) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return sendError(res, 404, 'Product not found');
+
+    const stock = Number(req.body.stock);
+    if (!Number.isFinite(stock) || stock < 0) {
+      return sendError(res, 400, 'Stock must be a positive number');
+    }
+
+    product.stock = stock;
+    product.inventory = {
+      ...(product.inventory?.toObject ? product.inventory.toObject() : product.inventory || {}),
+      stock,
+      sku: req.body.sku || product.inventory?.sku || '',
+    };
+    await product.save();
+
+    emitToAdmins(req.app, socketEvents.DOMAIN.PRODUCT_UPDATED, {
+      productId: String(product._id),
+      title: product.title,
+      category: product.category,
+      stock: product.stock,
+    });
+
+    return sendSuccess(res, 200, 'Inventory updated successfully', { product });
+  } catch (e) {
+    next(e);
+  }
+};
+
 module.exports = {
   getAdminProducts,
   adminCreateProduct,
   adminUpdateProduct,
   adminDeleteProduct,
+  adminUpdateInventory,
 };
 

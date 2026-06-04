@@ -12,6 +12,15 @@ const orderItemSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const statusHistorySchema = new mongoose.Schema(
+  {
+    status: { type: String, required: true },
+    label: { type: String, required: true },
+    timestamp: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
+
 const orderSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -23,7 +32,18 @@ const orderSchema = new mongoose.Schema(
     totalAmount: { type: Number, required: true, min: 0 },
     orderStatus: {
       type: String,
-      enum: ['pending', 'paid', 'processing', 'shipped', 'delivered', 'cancelled'],
+      enum: [
+        'pending',
+        'paid',
+        'processing',
+        'order-confirmed',
+        'packed',
+        'shipping',
+        'near-delivery',
+        'shipped',
+        'delivered',
+        'cancelled',
+      ],
       default: 'pending',
     },
     paymentStatus: {
@@ -42,6 +62,7 @@ const orderSchema = new mongoose.Schema(
       default: 'pending',
     },
     transactionVerifiedAt: { type: Date, default: null },
+    statusHistory: [statusHistorySchema],
   },
   { timestamps: true },
 );

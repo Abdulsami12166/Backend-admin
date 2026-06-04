@@ -4,6 +4,27 @@ const { sendSuccess, sendError } = require('../../utils/responseHandler');
 const { logger } = require('../../utils/logger');
 const { emitToAdmins, socketEvents } = require('../../utils/eventBus');
 
+const ORDER_STATUS_LABELS = {
+  'order-confirmed': 'Order Confirmed',
+  packed: 'Packed',
+  shipping: 'Shipping',
+  'near-delivery': 'Near Delivery',
+  delivered: 'Delivered',
+};
+
+const ALLOWED_ORDER_STATUSES = [
+  'pending',
+  'paid',
+  'processing',
+  'order-confirmed',
+  'packed',
+  'shipping',
+  'near-delivery',
+  'shipped',
+  'delivered',
+  'cancelled',
+];
+
 const getAdminOrders = async (req, res, next) => {
   try {
     const orders = await Order.find()
@@ -40,7 +61,23 @@ const adminUpdateOrderStatus = async (req, res, next) => {
     const order = await Order.findById(req.params.id);
     if (!order) return sendError(res, 404, 'Order not found');
 
-    if (req.body.orderStatus) order.orderStatus = req.body.orderStatus;
+    if (req.body.orderStatus) {
+      if (!ALLOWED_ORDER_STATUSES.includes(req.body.orderStatus)) {
+        return sendError(res, 400, 'Unsupported order status');
+      }
+
+      order.orderStatus = req.body.orderStatus;
+      order.statusHistory = [
+        ...(Array.isArray(order.statusHistory) ? order.statusHistory : []).filter(
+          item => item.status !== req.body.orderStatus,
+        ),
+        {
+          status: req.body.orderStatus,
+          label: ORDER_STATUS_LABELS[req.body.orderStatus] || req.body.orderStatus,
+          timestamp: new Date(),
+        },
+      ];
+    }
     if (req.body.paymentStatus) order.paymentStatus = req.body.paymentStatus;
 
     await order.save();
@@ -59,6 +96,8 @@ const adminUpdateOrderStatus = async (req, res, next) => {
       userId: String(order.user),
       orderStatus: order.orderStatus,
       paymentStatus: order.paymentStatus,
+      statusHistory: order.statusHistory || [],
+      updatedAt: order.updatedAt,
     };
 
     emitToAdmins(req.app, socketEvents.LEGACY.ORDER_STATUS_CHANGED, payload);
