@@ -56,8 +56,8 @@ router.get('/products', authorizeAdmin, authorizePermission('products:view'), ge
 router.post('/products', authorizeAdmin, authorizePermission('products:create'), uploadProductImages, adminCreateProduct);
 router.put('/products/:id', authorizeAdmin, authorizePermission('products:create'), uploadProductImages, adminUpdateProduct);
 router.patch('/products/:id/inventory', authorizeAdmin, authorizePermission('inventory:manage'), adminUpdateInventory);
-router.post('/products/:id/variants', authorizeAdmin, authorizePermission('products:create'), adminCreateVariant);
-router.patch('/products/:id/variants/:variantId', authorizeAdmin, authorizePermission('products:create'), adminUpdateVariant);
+router.post('/products/:id/variants', authorizeAdmin, authorizePermission('products:create'), uploadProductImages, adminCreateVariant);
+router.patch('/products/:id/variants/:variantId', authorizeAdmin, authorizePermission('products:create'), uploadProductImages, adminUpdateVariant);
 router.delete('/products/:id/variants/:variantId', authorizeAdmin, authorizePermission('products:create'), adminDeleteVariant);
 router.delete('/products/:id', authorizeAdmin, authorizePermission('products:delete'), adminDeleteProduct);
 

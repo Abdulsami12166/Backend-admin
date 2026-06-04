@@ -271,7 +271,10 @@ const adminCreateVariant = async (req, res, next) => {
     const product = await Product.findById(req.params.id);
     if (!product) return sendError(res, 404, 'Product not found');
 
-    product.variants.push(normalizeVariantPayload(req.body));
+    const variantPayload = normalizeVariantPayload(req.body);
+    const uploadedImages = await uploadProductImages(req.files || []);
+    if (uploadedImages.length) variantPayload.images = uploadedImages.map(image => image.url);
+    product.variants.push(variantPayload);
     await product.save();
     emitProductUpdated(req, product);
     return sendSuccess(res, 201, 'Variant created successfully', { product, variant: product.variants.at(-1) });
@@ -287,7 +290,10 @@ const adminUpdateVariant = async (req, res, next) => {
     const variant = product.variants.id(req.params.variantId);
     if (!variant) return sendError(res, 404, 'Variant not found');
 
-    Object.assign(variant, normalizeVariantPayload({ ...variant.toObject(), ...req.body }));
+    const variantPayload = normalizeVariantPayload({ ...variant.toObject(), ...req.body });
+    const uploadedImages = await uploadProductImages(req.files || []);
+    if (uploadedImages.length) variantPayload.images = uploadedImages.map(image => image.url);
+    Object.assign(variant, variantPayload);
     await product.save();
     emitProductUpdated(req, product);
     return sendSuccess(res, 200, 'Variant updated successfully', { product, variant });
