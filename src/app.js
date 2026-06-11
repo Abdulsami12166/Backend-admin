@@ -6,6 +6,7 @@ const path = require('path');
 require('dotenv').config();
 
 const adminRoutes = require('./routes/adminRoutes');
+const adminExtendedRoutes = require('./routes/adminExtendedRoutes');
 const { requestLogger } = require('./middleware/requestLogger');
 const { notFound, errorHandler } = require('./middleware/errorMiddleware');
 const { corsOptions } = require('./utils/corsOptions');
@@ -35,6 +36,7 @@ app.get('/api/v1/health', (req, res) => {
 });
 
 app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/admin', adminExtendedRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
