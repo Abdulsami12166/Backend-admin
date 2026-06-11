@@ -1,6 +1,6 @@
 const User = require('../../models/User');
 const UserActivity = require('../../models/UserActivity');
-const NotificationPreference = require('../models/NotificationPreference');
+const NotificationPreference = require('../../models/NotificationPreference');
 
 /**
  * Get all customers with pagination and filters
