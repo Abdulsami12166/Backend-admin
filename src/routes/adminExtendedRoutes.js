@@ -11,6 +11,10 @@ const invoiceController = require('../controllers/admin/invoiceAdminController')
 const auditLogController = require('../controllers/admin/auditLogAdminController');
 const settingsController = require('../controllers/admin/settingsAdminController');
 const featureToggleController = require('../controllers/admin/featureToggleAdminController');
+const notificationController = require('../controllers/admin/notificationAdminController');
+const sessionController = require('../controllers/admin/sessionAdminController');
+const orderTimelineController = require('../controllers/admin/orderTimelineAdminController');
+const bulkOperationsController = require('../controllers/admin/bulkOperationsAdminController');
 
 const router = express.Router();
 
@@ -110,5 +114,55 @@ router.get('/feature-toggles/:name/check', featureToggleController.isFeatureEnab
 router.post('/feature-toggles', authorizeAdmin, authorizePermission('features:manage'), featureToggleController.createFeatureToggle);
 router.get('/feature-toggles/stats/overview', authorizeAdmin, authorizePermission('analytics:view'), featureToggleController.getFeatureStats);
 router.get('/feature-toggles/:name/dependencies', authorizeAdmin, authorizePermission('features:view'), featureToggleController.getFeatureDependencies);
+
+// ============ NOTIFICATIONS ============
+router.get('/notifications/templates', authorizeAdmin, authorizePermission('notifications:view'), notificationController.getAllTemplates);
+router.get('/notifications/templates/:templateId', authorizeAdmin, authorizePermission('notifications:view'), notificationController.getTemplateDetails);
+router.post('/notifications/templates', authorizeAdmin, authorizePermission('notifications:manage'), notificationController.createTemplate);
+router.patch('/notifications/templates/:templateId', authorizeAdmin, authorizePermission('notifications:manage'), notificationController.updateTemplate);
+router.delete('/notifications/templates/:templateId', authorizeAdmin, authorizePermission('notifications:manage'), notificationController.deleteTemplate);
+
+router.get('/notifications/event-mappings', authorizeAdmin, authorizePermission('notifications:view'), notificationController.getAllEventMappings);
+router.post('/notifications/event-mappings', authorizeAdmin, authorizePermission('notifications:manage'), notificationController.createEventMapping);
+router.patch('/notifications/event-mappings/:mappingId', authorizeAdmin, authorizePermission('notifications:manage'), notificationController.updateEventMapping);
+router.delete('/notifications/event-mappings/:mappingId', authorizeAdmin, authorizePermission('notifications:manage'), notificationController.deleteEventMapping);
+
+router.get('/notifications/logs', authorizeAdmin, authorizePermission('notifications:view'), notificationController.getAllNotificationLogs);
+router.get('/notifications/logs/:logId', authorizeAdmin, authorizePermission('notifications:view'), notificationController.getNotificationLogDetails);
+router.post('/notifications/logs', authorizeAdmin, authorizePermission('notifications:manage'), notificationController.createNotificationLog);
+router.get('/notifications/stats', authorizeAdmin, authorizePermission('analytics:view'), notificationController.getNotificationStats);
+
+router.get('/notifications/marketing-rules', authorizeAdmin, authorizePermission('marketing:view'), notificationController.getAllMarketingRules);
+router.post('/notifications/marketing-rules', authorizeAdmin, authorizePermission('marketing:manage'), notificationController.createMarketingRule);
+router.patch('/notifications/marketing-rules/:ruleId', authorizeAdmin, authorizePermission('marketing:manage'), notificationController.updateMarketingRule);
+router.delete('/notifications/marketing-rules/:ruleId', authorizeAdmin, authorizePermission('marketing:manage'), notificationController.deleteMarketingRule);
+
+// ============ SESSIONS ============
+router.get('/sessions', authorizeAdmin, authorizePermission('admins:view'), sessionController.getAllActiveSessions);
+router.get('/sessions/admin/:adminId', authorizeAdmin, authorizePermission('admins:view'), sessionController.getAdminSessions);
+router.get('/sessions/:sessionId', authorizeAdmin, authorizePermission('admins:view'), sessionController.getSessionDetails);
+router.post('/sessions', authorizeAdmin, sessionController.createSession);
+router.post('/sessions/:sessionId/logout', authorizeAdmin, authorizePermission('admins:manage'), sessionController.forceLogout);
+router.post('/sessions/admin/:adminId/logout-all', authorizeAdmin, authorizePermission('admins:manage'), sessionController.forceLogoutAllForAdmin);
+router.patch('/sessions/:sessionId/activity', authorizeAdmin, sessionController.updateSessionActivity);
+router.get('/sessions/stats/overview', authorizeAdmin, authorizePermission('analytics:view'), sessionController.getSessionStats);
+
+// ============ ORDER TIMELINE ============
+router.get('/orders/:orderId/timeline', authorizeAdmin, authorizePermission('orders:view'), orderTimelineController.getOrderTimeline);
+router.post('/orders/:orderId/timeline/event', authorizeAdmin, authorizePermission('orders:update'), orderTimelineController.addTimelineEvent);
+router.patch('/orders/:orderId/timeline/:eventId', authorizeAdmin, authorizePermission('orders:update'), orderTimelineController.updateTimelineEvent);
+router.get('/orders/:orderId/timeline/lifecycle', authorizeAdmin, authorizePermission('orders:view'), orderTimelineController.getOrderLifecycleHistory);
+router.get('/timeline/stats', authorizeAdmin, authorizePermission('analytics:view'), orderTimelineController.getTimelineStats);
+
+// ============ BULK OPERATIONS ============
+router.get('/bulk-operations', authorizeAdmin, authorizePermission('products:manage'), bulkOperationsController.getBulkOperations);
+router.get('/bulk-operations/:jobId', authorizeAdmin, authorizePermission('products:manage'), bulkOperationsController.getBulkOperationDetails);
+router.post('/bulk-operations/visibility', authorizeAdmin, authorizePermission('products:manage'), bulkOperationsController.bulkToggleProductVisibility);
+router.post('/bulk-operations/inventory', authorizeAdmin, authorizePermission('inventory:manage'), bulkOperationsController.bulkUpdateInventory);
+router.post('/bulk-operations/category', authorizeAdmin, authorizePermission('products:manage'), bulkOperationsController.bulkAssignCategory);
+router.post('/bulk-operations/pricing', authorizeAdmin, authorizePermission('products:manage'), bulkOperationsController.bulkUpdatePricing);
+router.post('/bulk-operations/:jobId/cancel', authorizeAdmin, authorizePermission('products:manage'), bulkOperationsController.cancelBulkOperation);
+router.get('/bulk-operations/:jobId/logs', authorizeAdmin, authorizePermission('products:manage'), bulkOperationsController.getBulkOperationLogs);
+router.get('/bulk-operations/stats/overview', authorizeAdmin, authorizePermission('analytics:view'), bulkOperationsController.getBulkOperationStats);
 
 module.exports = router;
