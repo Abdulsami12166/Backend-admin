@@ -1,7 +1,7 @@
-const Ticket = require('../models/Ticket');
+const Ticket = require('../../models/Ticket');
 const Order = require('../../models/Order');
 const User = require('../../models/User');
-const AuditLog = require('../models/AuditLog');
+const AuditLog = require('../../models/AuditLog');
 
 /**
  * Get all tickets with filters

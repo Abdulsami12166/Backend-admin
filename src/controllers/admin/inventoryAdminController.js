@@ -1,6 +1,6 @@
-const Inventory = require('../models/Inventory');
+const Inventory = require('../../models/Inventory');
 const Product = require('../../models/Product');
-const AuditLog = require('../models/AuditLog');
+const AuditLog = require('../../models/AuditLog');
 
 /**
  * Get all inventory items with pagination

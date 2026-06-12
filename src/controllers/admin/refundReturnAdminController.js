@@ -1,7 +1,7 @@
-const Return = require('../models/Return');
-const Refund = require('../models/Refund');
+const Return = require('../../models/Return');
+const Refund = require('../../models/Refund');
 const Order = require('../../models/Order');
-const AuditLog = require('../models/AuditLog');
+const AuditLog = require('../../models/AuditLog');
 
 // ============ RETURNS ============
 

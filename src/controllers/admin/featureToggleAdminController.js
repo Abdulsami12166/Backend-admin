@@ -1,5 +1,5 @@
-const FeatureToggle = require('../models/FeatureToggle');
-const AuditLog = require('../models/AuditLog');
+const FeatureToggle = require('../../models/FeatureToggle');
+const AuditLog = require('../../models/AuditLog');
 
 /**
  * Get all feature toggles

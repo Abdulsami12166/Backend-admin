@@ -1,6 +1,6 @@
-const Invoice = require('../models/Invoice');
+const Invoice = require('../../models/Invoice');
 const Order = require('../../models/Order');
-const AuditLog = require('../models/AuditLog');
+const AuditLog = require('../../models/AuditLog');
 
 /**
  * Get all invoices

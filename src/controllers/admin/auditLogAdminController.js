@@ -1,4 +1,4 @@
-const AuditLog = require('../models/AuditLog');
+const AuditLog = require('../../models/AuditLog');
 
 /**
  * Get all audit logs with filters

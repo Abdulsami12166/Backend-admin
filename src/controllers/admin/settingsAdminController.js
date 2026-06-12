@@ -1,5 +1,5 @@
-const StoreSetting = require('../models/StoreSetting');
-const AuditLog = require('../models/AuditLog');
+const StoreSetting = require('../../models/StoreSetting');
+const AuditLog = require('../../models/AuditLog');
 
 /**
  * Get all store settings grouped by category

@@ -1,6 +1,6 @@
-const Shipment = require('../models/Shipment');
+const Shipment = require('../../models/Shipment');
 const Order = require('../../models/Order');
-const AuditLog = require('../models/AuditLog');
+const AuditLog = require('../../models/AuditLog');
 
 /**
  * Get all shipments
