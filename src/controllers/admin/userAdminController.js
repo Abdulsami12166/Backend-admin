@@ -1,10 +1,16 @@
 const User = require('../../models/User');
 const Order = require('../../models/Order');
 const UserActivity = require('../../models/UserActivity');
-const { sendSuccess, sendError } = require('../../utils/responseHandler');
+const {
+  sendSuccess,
+  sendError,
+  sendValidationError,
+  sendServerError,
+} = require('../../utils/feedback');
 const { emitToAdmins, socketEvents } = require('../../utils/eventBus');
 const { ADMIN_ROLES, DEFAULT_ROLE_PERMISSIONS, PERMISSIONS, normalizeRole } = require('../../config/rbac');
 const { getPermissionMatrix, updateRolePermissions } = require('../../services/rbacService');
+const { auditAction, auditError } = require('../../utils/workflow');
 
 const MANAGED_ADMIN_ROLES = ADMIN_ROLES.filter(role => role !== 'super-admin');
 
@@ -53,8 +59,11 @@ const updateAdminRolePermissions = async (req, res, next) => {
       userAgent: req.get('User-Agent'),
     });
 
+    await auditAction(req, 'update_role_permissions', 'role', req.params.role, null, { permissions: permissionsByRole[req.params.role] || [] });
+
     return sendSuccess(res, 200, 'Role permissions updated successfully', { permissionsByRole });
   } catch (e) {
+    await auditError(req, 'update_role_permissions', 'role', req.params.role, e);
     next(e);
   }
 };
@@ -96,6 +105,11 @@ const createAdminUser = async (req, res, next) => {
       details: `${admin.email} was created as ${admin.role}`,
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
+    });
+
+    await auditAction(req, 'create_admin_user', 'admin_user', admin._id, null, {
+      email: admin.email,
+      role: admin.role,
     });
 
     return sendSuccess(res, 201, 'Admin user created successfully', {
@@ -176,6 +190,8 @@ const adminBlockUser = async (req, res, next) => {
       userAgent: req.get('User-Agent'),
     });
 
+    await auditAction(req, 'block_user', 'user', user._id, { blocked: false }, { blocked: true });
+
     return sendSuccess(res, 200, 'User blocked successfully', { user });
   } catch (e) {
     next(e);
@@ -197,6 +213,8 @@ const adminUnblockUser = async (req, res, next) => {
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
     });
+
+    await auditAction(req, 'unblock_user', 'user', user._id, { blocked: true }, { blocked: false });
 
     return sendSuccess(res, 200, 'User unblocked successfully', { user });
   } catch (e) {
@@ -229,6 +247,8 @@ const adminForceLogoutUser = async (req, res, next) => {
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
     });
+
+    await auditAction(req, 'force_logout_user', 'user', user._id, null, { forceLogout: true });
 
     return sendSuccess(res, 200, 'User has been forcefully logged out');
   } catch (e) {

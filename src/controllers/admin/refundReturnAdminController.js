@@ -1,7 +1,12 @@
 const Return = require('../../models/Return');
 const Refund = require('../../models/Refund');
 const Order = require('../../models/Order');
-const AuditLog = require('../../models/AuditLog');
+const {
+  sendSuccess,
+  sendError,
+  sendServerError,
+} = require('../../utils/feedback');
+const { auditAction, auditError } = require('../../utils/workflow');
 
 // ============ RETURNS ============
 
@@ -25,18 +30,17 @@ exports.getAllReturns = async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
 
-    res.json({
-      success: true,
-      data: returns,
+    return sendSuccess(res, 200, 'Returns fetched successfully', {
+      returns,
       pagination: {
         total,
         page: parseInt(page),
         limit: parseInt(limit),
-        pages: Math.ceil(total / limit)
-      }
+        pages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return sendServerError(res, error.message, error.stack);
   }
 };
 
@@ -53,12 +57,12 @@ exports.getReturnDetails = async (req, res) => {
       .populate('timeline.updatedBy', 'name');
 
     if (!returnData) {
-      return res.status(404).json({ success: false, message: 'Return not found' });
+      return sendError(res, 404, 'Return not found');
     }
 
-    res.json({ success: true, data: returnData });
+    return sendSuccess(res, 200, 'Return details fetched successfully', { return: returnData });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return sendServerError(res, error.message, error.stack);
   }
 };
 
@@ -86,16 +90,9 @@ exports.approveReturn = async (req, res) => {
 
     await returnData.save();
 
-    // Log audit
-    await AuditLog.create({
-      actor: req.adminUser._id,
-      action: 'approve_return',
-      entityType: 'return',
-      entityId: returnData._id,
-      ipAddress: req.ip
-    });
+    await auditAction(req, 'approve_return', 'return', returnData._id, null, returnData.toObject());
 
-    res.json({ success: true, data: returnData, message: 'Return approved' });
+    return sendSuccess(res, 200, 'Return approved successfully', { return: returnData });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -126,16 +123,9 @@ exports.rejectReturn = async (req, res) => {
 
     await returnData.save();
 
-    // Log audit
-    await AuditLog.create({
-      actor: req.adminUser._id,
-      action: 'reject_return',
-      entityType: 'return',
-      entityId: returnData._id,
-      ipAddress: req.ip
-    });
+    await auditAction(req, 'reject_return', 'return', returnData._id, null, returnData.toObject());
 
-    res.json({ success: true, data: returnData, message: 'Return rejected' });
+    return sendSuccess(res, 200, 'Return rejected successfully', { return: returnData });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -169,9 +159,15 @@ exports.updateReturnStatus = async (req, res) => {
 
     await returnData.save();
 
-    res.json({ success: true, data: returnData, message: `Return status updated to ${status}` });
+    await auditAction(req, 'update_return_status', 'return', returnData._id, null, returnData.toObject(), {
+      status,
+      trackingNumber,
+    });
+
+    return sendSuccess(res, 200, `Return status updated to ${status}`, { return: returnData });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    await auditError(req, 'update_return_status', 'return', req.params.returnId, error);
+    return sendServerError(res, error.message, error.stack);
   }
 };
 
@@ -196,18 +192,17 @@ exports.getAllRefunds = async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
 
-    res.json({
-      success: true,
-      data: refunds,
+    return sendSuccess(res, 200, 'Refunds fetched successfully', {
+      refunds,
       pagination: {
         total,
         page: parseInt(page),
         limit: parseInt(limit),
-        pages: Math.ceil(total / limit)
-      }
+        pages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return sendServerError(res, error.message, error.stack);
   }
 };
 
@@ -225,12 +220,12 @@ exports.getRefundDetails = async (req, res) => {
       .populate('timeline.updatedBy', 'name');
 
     if (!refund) {
-      return res.status(404).json({ success: false, message: 'Refund not found' });
+      return sendError(res, 404, 'Refund not found');
     }
 
-    res.json({ success: true, data: refund });
+    return sendSuccess(res, 200, 'Refund details fetched successfully', { refund });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return sendServerError(res, error.message, error.stack);
   }
 };
 
@@ -266,16 +261,9 @@ exports.approveRefund = async (req, res) => {
 
     await refund.save();
 
-    // Log audit
-    await AuditLog.create({
-      actor: req.adminUser._id,
-      action: 'approve_refund',
-      entityType: 'refund',
-      entityId: refund._id,
-      ipAddress: req.ip
-    });
+    await auditAction(req, 'approve_refund', 'refund', refund._id, null, refund.toObject());
 
-    res.json({ success: true, data: refund, message: 'Refund approved' });
+    return sendSuccess(res, 200, 'Refund approved successfully', { refund });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -306,7 +294,9 @@ exports.rejectRefund = async (req, res) => {
 
     await refund.save();
 
-    res.json({ success: true, data: refund, message: 'Refund rejected' });
+    await auditAction(req, 'reject_refund', 'refund', refund._id, null, refund.toObject());
+
+    return sendSuccess(res, 200, 'Refund rejected successfully', { refund });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -342,9 +332,15 @@ exports.processRefund = async (req, res) => {
 
     await refund.save();
 
-    res.json({ success: true, data: refund, message: 'Refund processing initiated' });
+    await auditAction(req, 'process_refund', 'refund', refund._id, null, refund.toObject(), {
+      paymentGateway,
+      transactionId,
+    });
+
+    return sendSuccess(res, 200, 'Refund processing initiated', { refund });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    await auditError(req, 'process_refund', 'refund', req.params.refundId, error);
+    return sendServerError(res, error.message, error.stack);
   }
 };
 
@@ -372,9 +368,12 @@ exports.completeRefund = async (req, res) => {
 
     await refund.save();
 
-    res.json({ success: true, data: refund, message: 'Refund completed' });
+    await auditAction(req, 'complete_refund', 'refund', refund._id, null, refund.toObject());
+
+    return sendSuccess(res, 200, 'Refund completed successfully', { refund });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    await auditError(req, 'complete_refund', 'refund', req.params.refundId, error);
+    return sendServerError(res, error.message, error.stack);
   }
 };
 
@@ -399,15 +398,12 @@ exports.getRefundStats = async (req, res) => {
       { $group: { _id: null, total: { $sum: '$refundAmount' } } }
     ]);
 
-    res.json({
-      success: true,
-      data: {
-        byStatus: stats,
-        total,
-        pendingAmount: pendingAmount[0]?.total || 0
-      }
+    return sendSuccess(res, 200, 'Refund statistics fetched successfully', {
+      byStatus: stats,
+      total,
+      pendingAmount: pendingAmount[0]?.total || 0,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return sendServerError(res, error.message, error.stack);
   }
 };

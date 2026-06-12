@@ -1,6 +1,11 @@
 const Shipment = require('../../models/Shipment');
 const Order = require('../../models/Order');
-const AuditLog = require('../../models/AuditLog');
+const {
+  sendSuccess,
+  sendError,
+  sendServerError,
+} = require('../../utils/feedback');
+const { auditAction, auditError } = require('../../utils/workflow');
 
 /**
  * Get all shipments
@@ -36,18 +41,17 @@ exports.getAllShipments = async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
 
-    res.json({
-      success: true,
-      data: shipments,
+    return sendSuccess(res, 200, 'Admin shipments fetched successfully', {
+      shipments,
       pagination: {
         total,
         page: parseInt(page),
         limit: parseInt(limit),
-        pages: Math.ceil(total / limit)
-      }
+        pages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return sendServerError(res, error.message, error.stack);
   }
 };
 
@@ -65,12 +69,12 @@ exports.getShipmentDetails = async (req, res) => {
       });
 
     if (!shipment) {
-      return res.status(404).json({ success: false, message: 'Shipment not found' });
+      return sendError(res, 404, 'Shipment not found');
     }
 
-    res.json({ success: true, data: shipment });
+    return sendSuccess(res, 200, 'Shipment details fetched successfully', { shipment });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return sendServerError(res, error.message, error.stack);
   }
 };
 
@@ -120,22 +124,11 @@ exports.createShipment = async (req, res) => {
     order.orderStatus = 'shipped';
     await order.save();
 
-    // Log audit
-    await AuditLog.create({
-      actor: req.adminUser._id,
-      action: 'create_shipment',
-      entityType: 'shipment',
-      entityId: shipment._id,
-      changes: { after: shipment.toObject() },
-      ipAddress: req.ip,
-      resourcePath: `/api/admin/shipments/${orderId}`
+    await auditAction(req, 'create_shipment', 'shipment', shipment._id, null, shipment.toObject(), {
+      resourcePath: `/api/admin/shipments/${orderId}`,
     });
 
-    res.status(201).json({ 
-      success: true, 
-      data: shipment,
-      message: 'Shipment created successfully'
-    });
+    return sendSuccess(res, 201, 'Shipment created successfully', { shipment });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -174,20 +167,14 @@ exports.updateTrackingStatus = async (req, res) => {
 
     await shipment.save();
 
-    // Log audit
-    await AuditLog.create({
-      actor: req.adminUser._id,
-      action: 'update_tracking',
-      entityType: 'shipment',
-      entityId: shipment._id,
-      changes: { after: { status, location } },
-      ipAddress: req.ip,
-      resourcePath: `/api/admin/shipments/${shipmentId}/tracking`
+    await auditAction(req, 'update_tracking', 'shipment', shipment._id, null, { status, location }, {
+      resourcePath: `/api/admin/shipments/${shipmentId}/tracking`,
     });
 
-    res.json({ success: true, data: shipment, message: 'Tracking updated' });
+    return sendSuccess(res, 200, 'Tracking updated successfully', { shipment });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    await auditError(req, 'update_tracking', 'shipment', req.params.shipmentId, error);
+    return sendServerError(res, error.message, error.stack);
   }
 };
 
@@ -204,16 +191,13 @@ exports.getTrackingHistory = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Shipment not found' });
     }
 
-    res.json({
-      success: true,
-      data: {
-        trackingNumber: shipment.trackingNumber,
-        currentStatus: shipment.status,
-        events: shipment.trackingEvents.sort((a, b) => b.timestamp - a.timestamp)
-      }
+    return sendSuccess(res, 200, 'Shipment tracking history fetched successfully', {
+      trackingNumber: shipment.trackingNumber,
+      currentStatus: shipment.status,
+      events: shipment.trackingEvents.sort((a, b) => b.timestamp - a.timestamp),
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return sendServerError(res, error.message, error.stack);
   }
 };
 
@@ -230,13 +214,12 @@ exports.getShipmentsByStatus = async (req, res) => {
       .limit(parseInt(limit))
       .sort('-createdAt');
 
-    res.json({
-      success: true,
-      data: shipments,
-      count: shipments.length
+    return sendSuccess(res, 200, 'Shipments by status fetched successfully', {
+      shipments,
+      count: shipments.length,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return sendServerError(res, error.message, error.stack);
   }
 };
 
@@ -274,15 +257,12 @@ exports.getShipmentStats = async (req, res) => {
       }
     ]);
 
-    res.json({
-      success: true,
-      data: {
-        byStatus: stats.reduce((acc, s) => ({ ...acc, [s._id]: s.count }), {}),
-        total,
-        avgDeliveryDays: avgDeliveryTime[0]?.avgDays?.toFixed(2) || 0
-      }
+    return sendSuccess(res, 200, 'Shipment statistics fetched successfully', {
+      byStatus: stats.reduce((acc, s) => ({ ...acc, [s._id]: s.count }), {}),
+      total,
+      avgDeliveryTime: avgDeliveryTime[0]?.avgDays || 0,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return sendServerError(res, error.message, error.stack);
   }
 };

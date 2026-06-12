@@ -1,8 +1,14 @@
 const Order = require('../../models/Order');
 const UserActivity = require('../../models/UserActivity');
-const { sendSuccess, sendError } = require('../../utils/responseHandler');
+const {
+  sendSuccess,
+  sendError,
+  sendValidationError,
+  sendServerError,
+} = require('../../utils/feedback');
 const { logger } = require('../../utils/logger');
 const { emitToAdmins, emitToUser, socketEvents } = require('../../utils/eventBus');
+const { auditAction, auditError } = require('../../utils/workflow');
 
 const ORDER_STATUS_LABELS = {
   'order-confirmed': 'Order Confirmed',
@@ -64,6 +70,8 @@ const adminUpdateOrderStatus = async (req, res, next) => {
     const order = await Order.findById(req.params.id);
     if (!order) return sendError(res, 404, 'Order not found');
 
+    const beforeOrder = order.toObject();
+
     if (req.body.orderStatus) {
       if (!ALLOWED_ORDER_STATUSES.includes(req.body.orderStatus)) {
         return sendError(res, 400, 'Unsupported order status');
@@ -94,6 +102,12 @@ const adminUpdateOrderStatus = async (req, res, next) => {
       userAgent: req.get('User-Agent'),
     });
 
+    const afterOrder = order.toObject();
+    await auditAction(req, 'update_order_status', 'order', order._id, beforeOrder, afterOrder, {
+      orderStatus: order.orderStatus,
+      paymentStatus: order.paymentStatus,
+    });
+
     const payload = {
       orderId: String(order._id),
       userId: String(order.user),
@@ -109,6 +123,7 @@ const adminUpdateOrderStatus = async (req, res, next) => {
 
     return sendSuccess(res, 200, 'Order status updated successfully', { order });
   } catch (e) {
+    await auditError(req, 'update_order_status', 'order', req.params.id, e);
     next(e);
   }
 };
@@ -118,6 +133,7 @@ const adminDeleteOrder = async (req, res, next) => {
     const order = await Order.findById(req.params.id);
     if (!order) return sendError(res, 404, 'Order not found');
 
+    const beforeOrder = order.toObject();
     await order.deleteOne();
 
     await UserActivity.create({
@@ -128,8 +144,13 @@ const adminDeleteOrder = async (req, res, next) => {
       userAgent: req.get('User-Agent'),
     });
 
+    await auditAction(req, 'delete_order', 'order', req.params.id, beforeOrder, null, {
+      note: 'Deleted by admin',
+    });
+
     return sendSuccess(res, 200, 'Order deleted successfully');
   } catch (e) {
+    await auditError(req, 'delete_order', 'order', req.params.id, e);
     next(e);
   }
 };
@@ -146,6 +167,10 @@ const adminCreateOrder = async (req, res, next) => {
       userAgent: req.get('User-Agent'),
     });
 
+    await auditAction(req, 'create_order', 'order', order._id, null, order.toObject(), {
+      note: 'Created by admin',
+    });
+
     const payload = {
       orderId: String(order._id),
       ...order.toObject(),
@@ -156,6 +181,7 @@ const adminCreateOrder = async (req, res, next) => {
 
     return sendSuccess(res, 201, 'Order created successfully', { order });
   } catch (e) {
+    await auditError(req, 'create_order', 'order', null, e);
     next(e);
   }
 };

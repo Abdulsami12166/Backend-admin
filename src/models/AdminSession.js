@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 
 const adminSessionSchema = new mongoose.Schema(
   {
-    adminUser: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminUser', required: true },
+    adminUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    adminEmail: { type: String, required: true, index: true },
     sessionToken: { type: String, required: true, unique: true },
     refreshToken: { type: String, unique: true, sparse: true },
     ipAddress: { type: String, required: true },

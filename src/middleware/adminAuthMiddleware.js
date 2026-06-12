@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const AdminSession = require('../models/AdminSession');
 const { logger } = require('../utils/logger');
 const { ADMIN_ROLES, normalizeRole } = require('../config/rbac');
 const { getRolePermissions, hasPermission } = require('../services/rbacService');
@@ -7,12 +8,13 @@ const { getRolePermissions, hasPermission } = require('../services/rbacService')
 const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET || 'default_admin_secret';
 const SUPPORTED_ADMIN_ROLES = [...ADMIN_ROLES, 'admin'];
 
-const createAdminToken = (user, permissions) => jwt.sign(
+const createAdminToken = (user, permissions, sessionId) => jwt.sign(
   {
     id: user._id,
     role: user.role,
     permissions,
     tokenVersion: user.tokenVersion || 0,
+    sessionId,
   },
   ADMIN_JWT_SECRET,
   {
@@ -50,9 +52,24 @@ const adminLogin = async (req, res, next) => {
     await user.save();
 
     const permissions = await getRolePermissions(user.role);
-    const token = createAdminToken(user, permissions);
+    const sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const sessionToken = sessionId;
+    const token = createAdminToken(user, permissions, sessionId);
 
-    logger.info('Admin logged in', { userId: user._id, email: user.email });
+    await AdminSession.create({
+      adminUser: user._id,
+      sessionToken,
+      refreshToken: '',
+      ipAddress: req.ip || req.headers['x-forwarded-for'] || 'unknown',
+      userAgent: req.headers['user-agent'] || '',
+      loginAt: new Date(),
+      lastActivityAt: new Date(),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      isActive: true,
+      adminEmail: user.email,
+    });
+
+    logger.info('Admin logged in', { userId: user._id, email: user.email, sessionId });
 
     return res.json({
       success: true,
@@ -164,17 +181,37 @@ const authorizeAdmin = async (req, res, next) => {
       });
     }
 
-
     // Check token version for token invalidation
     if ((currentUser.tokenVersion || 0) !== (decoded.tokenVersion || 0)) {
       logger.warn('Admin token version mismatch', { userId: decoded.id });
       return res.status(401).json({ success: false, message: 'Invalid or expired token' });
     }
 
+    let currentSession = null;
+    if (decoded.sessionId) {
+      currentSession = await AdminSession.findOne({ sessionToken: decoded.sessionId });
+      if (!currentSession || !currentSession.isActive || (currentSession.expiresAt && currentSession.expiresAt < new Date())) {
+        logger.warn('Admin session invalid or expired', {
+          userId: decoded.id,
+          sessionId: decoded.sessionId,
+        });
+        return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+      }
+      if (currentSession.adminUser.toString() !== currentUser._id.toString()) {
+        logger.warn('Admin session user mismatch', {
+          userId: decoded.id,
+          sessionId: decoded.sessionId,
+          sessionAdminUser: currentSession.adminUser,
+        });
+        return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+      }
+    }
 
-    // Attach user info to request
+    // Attach user and session info to request
     req.user = decoded;
     req.userId = decoded.id;
+    req.adminUser = currentUser;
+    req.adminSession = currentSession;
     return next();
   } catch (error) {
     // Log detailed error for JWT-related issues

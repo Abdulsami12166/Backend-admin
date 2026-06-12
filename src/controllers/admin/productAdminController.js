@@ -1,8 +1,14 @@
 const Product = require('../../models/Product');
-const { sendSuccess, sendError } = require('../../utils/responseHandler');
+const {
+  sendSuccess,
+  sendError,
+  sendValidationError,
+  sendServerError,
+} = require('../../utils/feedback');
 const { logger } = require('../../utils/logger');
 const { uploadProductImages } = require('../../services/productImageService');
 const { emitToAdmins, emitToAll, socketEvents } = require('../../utils/eventBus');
+const { auditAction, auditError } = require('../../utils/workflow');
 
 const CATEGORY_CONFIG = {
   Mobiles: {
@@ -158,9 +164,18 @@ const adminCreateProduct = async (req, res, next) => {
     emitToAdmins(req.app, socketEvents.DOMAIN.PRODUCT_CREATED, eventPayload);
     emitToAll(req.app, socketEvents.DOMAIN.PRODUCT_CREATED, eventPayload);
 
+    await auditAction(req, 'create_product', 'product', product._id, null, product.toObject(), {
+      productSlug: product.slug,
+      category: product.category,
+      metadata: { stock: product.stock },
+    });
+
     logger.info('Admin created product', { productId: product._id });
     return sendSuccess(res, 201, 'Product created successfully', { product });
   } catch (e) {
+    await auditError(req, 'create_product', 'product', null, e, {
+      payload: req.body,
+    });
     next(e);
   }
 };
@@ -170,6 +185,7 @@ const adminUpdateProduct = async (req, res, next) => {
     const product = await Product.findById(req.params.id);
     if (!product) return sendError(res, 404, 'Product not found');
 
+    const beforeProduct = product.toObject();
     const productPayload = validateProductPayload(req.body, req.files || [], product);
     const uploadedImages = await uploadProductImages(req.files || []);
     Object.assign(product, productPayload);
@@ -181,8 +197,15 @@ const adminUpdateProduct = async (req, res, next) => {
 
     emitProductUpdated(req, product);
 
+    await auditAction(req, 'update_product', 'product', product._id, beforeProduct, product.toObject(), {
+      metadata: { updates: Object.keys(productPayload) },
+    });
+
     return sendSuccess(res, 200, 'Product updated successfully', { product });
   } catch (e) {
+    await auditError(req, 'update_product', 'product', req.params.id, e, {
+      payload: req.body,
+    });
     next(e);
   }
 };
@@ -192,9 +215,18 @@ const adminDeleteProduct = async (req, res, next) => {
     const product = await Product.findById(req.params.id);
     if (!product) return sendError(res, 404, 'Product not found');
 
+    const beforeProduct = product.toObject();
     await product.deleteOne();
+
+    await auditAction(req, 'delete_product', 'product', req.params.id, beforeProduct, null, {
+      metadata: { reason: 'deleted by admin' },
+    });
+
     return sendSuccess(res, 200, 'Product deleted successfully');
   } catch (e) {
+    await auditError(req, 'delete_product', 'product', req.params.id, e, {
+      payload: req.params,
+    });
     next(e);
   }
 };
@@ -206,9 +238,10 @@ const adminUpdateInventory = async (req, res, next) => {
 
     const stock = Number(req.body.stock);
     if (!Number.isFinite(stock) || stock < 0) {
-      return sendError(res, 400, 'Stock must be a positive number');
+      return sendValidationError(res, [{ field: 'stock', message: 'Stock must be a positive number', code: 'NOT_POSITIVE' }], 'Stock update failed');
     }
 
+    const beforeProduct = product.toObject();
     product.stock = stock;
     product.inventory = {
       ...(product.inventory?.toObject ? product.inventory.toObject() : product.inventory || {}),
@@ -224,8 +257,15 @@ const adminUpdateInventory = async (req, res, next) => {
       stock: product.stock,
     });
 
+    await auditAction(req, 'update_inventory', 'product', product._id, beforeProduct, product.toObject(), {
+      metadata: { stock: product.stock },
+    });
+
     return sendSuccess(res, 200, 'Inventory updated successfully', { product });
   } catch (e) {
+    await auditError(req, 'update_inventory', 'product', req.params.id, e, {
+      payload: req.body,
+    });
     next(e);
   }
 };
@@ -277,8 +317,17 @@ const adminCreateVariant = async (req, res, next) => {
     product.variants.push(variantPayload);
     await product.save();
     emitProductUpdated(req, product);
-    return sendSuccess(res, 201, 'Variant created successfully', { product, variant: product.variants.at(-1) });
+
+    const addedVariant = product.variants.at(-1);
+    await auditAction(req, 'create_variant', 'product_variant', addedVariant?._id, null, addedVariant?.toObject(), {
+      productId: product._id,
+    });
+
+    return sendSuccess(res, 201, 'Variant created successfully', { product, variant: addedVariant });
   } catch (e) {
+    await auditError(req, 'create_variant', 'product_variant', null, e, {
+      payload: req.body,
+    });
     next(e);
   }
 };
@@ -290,14 +339,23 @@ const adminUpdateVariant = async (req, res, next) => {
     const variant = product.variants.id(req.params.variantId);
     if (!variant) return sendError(res, 404, 'Variant not found');
 
+    const beforeVariant = variant.toObject();
     const variantPayload = normalizeVariantPayload({ ...variant.toObject(), ...req.body });
     const uploadedImages = await uploadProductImages(req.files || []);
     if (uploadedImages.length) variantPayload.images = uploadedImages.map(image => image.url);
     Object.assign(variant, variantPayload);
     await product.save();
     emitProductUpdated(req, product);
+
+    await auditAction(req, 'update_variant', 'product_variant', variant._id, beforeVariant, variant.toObject(), {
+      productId: product._id,
+    });
+
     return sendSuccess(res, 200, 'Variant updated successfully', { product, variant });
   } catch (e) {
+    await auditError(req, 'update_variant', 'product_variant', req.params.variantId, e, {
+      payload: req.body,
+    });
     next(e);
   }
 };
@@ -309,11 +367,20 @@ const adminDeleteVariant = async (req, res, next) => {
     const variant = product.variants.id(req.params.variantId);
     if (!variant) return sendError(res, 404, 'Variant not found');
 
+    const beforeVariant = variant.toObject();
     variant.deleteOne();
     await product.save();
     emitProductUpdated(req, product);
+
+    await auditAction(req, 'delete_variant', 'product_variant', req.params.variantId, beforeVariant, null, {
+      productId: product._id,
+    });
+
     return sendSuccess(res, 200, 'Variant deleted successfully', { product });
   } catch (e) {
+    await auditError(req, 'delete_variant', 'product_variant', req.params.variantId, e, {
+      payload: req.params,
+    });
     next(e);
   }
 };

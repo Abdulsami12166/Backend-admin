@@ -1,345 +1,597 @@
 const asyncHandler = require('../../middleware/asyncHandler');
+const NotificationTemplate = require('../../models/NotificationTemplate');
+const NotificationEventMapping = require('../../models/NotificationEventMapping');
+const NotificationLog = require('../../models/NotificationLog');
+const NotificationMarketingRule = require('../../models/NotificationMarketingRule');
+const AuditLog = require('../../models/AuditLog');
+const User = require('../../models/User');
 
-// Mock data for notifications
-const notificationTemplates = new Map();
-const eventMappings = new Map();
-const notificationLogs = new Map();
-const marketingRules = new Map();
+const DEFAULT_RETRY_POLICY = { maxRetries: 3, retryIntervalInMinutes: 5 };
 
-// TEMPLATES
+const normalizeDocument = (doc) => {
+  if (!doc) return doc;
+  const data = typeof doc.toObject === 'function' ? doc.toObject() : { ...doc };
+  data.id = data._id;
+  return data;
+};
+
 exports.getAllTemplates = asyncHandler(async (req, res) => {
-  const templates = Array.from(notificationTemplates.values());
+  const { category, trigger, channel, active, page = 1, limit = 50 } = req.query;
+  const query = {};
+
+  if (category) query.category = category;
+  if (trigger) query.trigger = trigger;
+  if (channel) query[`channels.${channel}`] = true;
+  if (active !== undefined) query.isActive = active === 'true';
+
+  const total = await NotificationTemplate.countDocuments(query);
+  const templates = await NotificationTemplate.find(query)
+    .sort('-createdAt')
+    .skip((page - 1) * limit)
+    .limit(parseInt(limit, 10))
+    .lean();
+
   res.status(200).json({
     success: true,
-    count: templates.length,
-    data: templates,
+    data: templates.map((template) => ({ ...template, id: template._id })),
+    pagination: {
+      total,
+      page: parseInt(page, 10),
+      limit: parseInt(limit, 10),
+      pages: Math.ceil(total / limit),
+    },
   });
 });
 
 exports.getTemplateDetails = asyncHandler(async (req, res) => {
   const { templateId } = req.params;
-  const template = notificationTemplates.get(templateId);
-  
+  const template = await NotificationTemplate.findById(templateId).lean();
+
   if (!template) {
     return res.status(404).json({
       success: false,
       message: 'Template not found',
     });
   }
-  
+
   res.status(200).json({
     success: true,
-    data: template,
+    data: { ...template, id: template._id },
   });
 });
 
 exports.createTemplate = asyncHandler(async (req, res) => {
-  const { name, type, subject, body, variables, channel } = req.body;
-  
-  const templateId = `tpl_${Date.now()}`;
-  const template = {
-    id: templateId,
+  const {
     name,
-    type, // email, sms, push
-    subject,
-    body,
-    variables: variables || [],
-    channel,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    isActive: true,
-  };
-  
-  notificationTemplates.set(templateId, template);
-  
+    displayName,
+    description,
+    category,
+    trigger,
+    channels = {},
+    emailTemplate = {},
+    smsTemplate = {},
+    pushTemplate = {},
+    inAppTemplate = {},
+    isActive = true,
+    isSystem = false,
+    priority = 0,
+    delayInMinutes = 0,
+    retryPolicy = DEFAULT_RETRY_POLICY,
+    tags = [],
+    metadata = {},
+  } = req.body;
+
+  const template = new NotificationTemplate({
+    name,
+    displayName: displayName || name,
+    description,
+    category,
+    trigger,
+    channels,
+    emailTemplate,
+    smsTemplate,
+    pushTemplate,
+    inAppTemplate,
+    isActive,
+    isSystem,
+    priority,
+    delayInMinutes,
+    retryPolicy,
+    tags,
+    metadata,
+    createdBy: req.adminUser._id,
+    updatedBy: req.adminUser._id,
+  });
+
+  await template.save();
+
+  await AuditLog.create({
+    actor: req.adminUser._id,
+    action: 'create_notification_template',
+    entityType: 'notification_template',
+    entityId: template._id,
+    status: 'success',
+    severity: 'info',
+    ipAddress: req.ip,
+    resourcePath: req.originalUrl,
+    changes: { after: template.toObject() },
+  });
+
   res.status(201).json({
     success: true,
     message: 'Template created successfully',
-    data: template,
+    data: normalizeDocument(template),
   });
 });
 
 exports.updateTemplate = asyncHandler(async (req, res) => {
   const { templateId } = req.params;
-  const template = notificationTemplates.get(templateId);
-  
+  const template = await NotificationTemplate.findById(templateId);
+
   if (!template) {
     return res.status(404).json({
       success: false,
       message: 'Template not found',
     });
   }
-  
-  const updated = {
-    ...template,
-    ...req.body,
-    updatedAt: new Date(),
-  };
-  
-  notificationTemplates.set(templateId, updated);
-  
+
+  if (template.isSystem && req.body.isActive === false) {
+    return res.status(403).json({ success: false, message: 'System templates cannot be deactivated' });
+  }
+
+  const before = template.toObject();
+  Object.assign(template, req.body);
+  template.updatedBy = req.adminUser._id;
+  await template.save();
+
+  await AuditLog.create({
+    actor: req.adminUser._id,
+    action: 'update_notification_template',
+    entityType: 'notification_template',
+    entityId: template._id,
+    status: 'success',
+    severity: 'info',
+    ipAddress: req.ip,
+    resourcePath: req.originalUrl,
+    changes: { before, after: template.toObject() },
+  });
+
   res.status(200).json({
     success: true,
     message: 'Template updated successfully',
-    data: updated,
+    data: normalizeDocument(template),
   });
 });
 
 exports.deleteTemplate = asyncHandler(async (req, res) => {
   const { templateId } = req.params;
-  
-  if (!notificationTemplates.has(templateId)) {
+  const template = await NotificationTemplate.findById(templateId);
+
+  if (!template) {
     return res.status(404).json({
       success: false,
       message: 'Template not found',
     });
   }
-  
-  notificationTemplates.delete(templateId);
-  
+
+  if (template.isSystem) {
+    return res.status(403).json({
+      success: false,
+      message: 'System templates cannot be deleted',
+    });
+  }
+
+  await template.deleteOne();
+
+  await AuditLog.create({
+    actor: req.adminUser._id,
+    action: 'delete_notification_template',
+    entityType: 'notification_template',
+    entityId: template._id,
+    status: 'success',
+    severity: 'warning',
+    ipAddress: req.ip,
+    resourcePath: req.originalUrl,
+    changes: { before: normalizeDocument(template) },
+  });
+
   res.status(200).json({
     success: true,
     message: 'Template deleted successfully',
   });
 });
 
-// EVENT MAPPINGS
 exports.getAllEventMappings = asyncHandler(async (req, res) => {
-  const mappings = Array.from(eventMappings.values());
+  const { event, active, page = 1, limit = 50 } = req.query;
+  const query = {};
+
+  if (event) query.event = event;
+  if (active !== undefined) query.active = active === 'true';
+
+  const total = await NotificationEventMapping.countDocuments(query);
+  const mappings = await NotificationEventMapping.find(query)
+    .populate('templates', 'name displayName')
+    .sort('-createdAt')
+    .skip((page - 1) * limit)
+    .limit(parseInt(limit, 10));
+
   res.status(200).json({
     success: true,
-    count: mappings.length,
-    data: mappings,
+    data: mappings.map(normalizeDocument),
+    pagination: {
+      total,
+      page: parseInt(page, 10),
+      limit: parseInt(limit, 10),
+      pages: Math.ceil(total / limit),
+    },
   });
 });
 
 exports.createEventMapping = asyncHandler(async (req, res) => {
-  const { event, templates, conditions, active } = req.body;
-  
-  const mappingId = `evt_${Date.now()}`;
-  const mapping = {
-    id: mappingId,
-    event, // order.created, order.shipped, return.initiated, etc
-    templates: templates || [],
-    conditions: conditions || [],
-    active: active !== false,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-  
-  eventMappings.set(mappingId, mapping);
-  
+  const { event, templates = [], conditions = [], active = true, description = '' } = req.body;
+
+  const mapping = new NotificationEventMapping({
+    event,
+    description,
+    templates,
+    conditions,
+    active,
+    createdBy: req.adminUser._id,
+    updatedBy: req.adminUser._id,
+  });
+
+  await mapping.save();
+
+  await AuditLog.create({
+    actor: req.adminUser._id,
+    action: 'create_notification_event_mapping',
+    entityType: 'notification_event_mapping',
+    entityId: mapping._id,
+    status: 'success',
+    severity: 'info',
+    ipAddress: req.ip,
+    resourcePath: req.originalUrl,
+    changes: { after: mapping.toObject() },
+  });
+
   res.status(201).json({
     success: true,
     message: 'Event mapping created successfully',
-    data: mapping,
+    data: normalizeDocument(mapping),
   });
 });
 
 exports.updateEventMapping = asyncHandler(async (req, res) => {
   const { mappingId } = req.params;
-  const mapping = eventMappings.get(mappingId);
-  
+  const mapping = await NotificationEventMapping.findById(mappingId);
+
   if (!mapping) {
     return res.status(404).json({
       success: false,
       message: 'Event mapping not found',
     });
   }
-  
-  const updated = {
-    ...mapping,
-    ...req.body,
-    updatedAt: new Date(),
-  };
-  
-  eventMappings.set(mappingId, updated);
-  
+
+  const before = mapping.toObject();
+  Object.assign(mapping, req.body);
+  mapping.updatedBy = req.adminUser._id;
+  await mapping.save();
+
+  await AuditLog.create({
+    actor: req.adminUser._id,
+    action: 'update_notification_event_mapping',
+    entityType: 'notification_event_mapping',
+    entityId: mapping._id,
+    status: 'success',
+    severity: 'info',
+    ipAddress: req.ip,
+    resourcePath: req.originalUrl,
+    changes: { before, after: mapping.toObject() },
+  });
+
   res.status(200).json({
     success: true,
     message: 'Event mapping updated successfully',
-    data: updated,
+    data: normalizeDocument(mapping),
   });
 });
 
 exports.deleteEventMapping = asyncHandler(async (req, res) => {
   const { mappingId } = req.params;
-  
-  if (!eventMappings.has(mappingId)) {
+  const mapping = await NotificationEventMapping.findById(mappingId);
+
+  if (!mapping) {
     return res.status(404).json({
       success: false,
       message: 'Event mapping not found',
     });
   }
-  
-  eventMappings.delete(mappingId);
-  
+
+  await mapping.deleteOne();
+
+  await AuditLog.create({
+    actor: req.adminUser._id,
+    action: 'delete_notification_event_mapping',
+    entityType: 'notification_event_mapping',
+    entityId: mapping._id,
+    status: 'success',
+    severity: 'warning',
+    ipAddress: req.ip,
+    resourcePath: req.originalUrl,
+    changes: { before: normalizeDocument(mapping) },
+  });
+
   res.status(200).json({
     success: true,
     message: 'Event mapping deleted successfully',
   });
 });
 
-// NOTIFICATION LOGS
 exports.getAllNotificationLogs = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20, status, type } = req.query;
-  
-  let logs = Array.from(notificationLogs.values());
-  
-  if (status) logs = logs.filter(log => log.status === status);
-  if (type) logs = logs.filter(log => log.type === type);
-  
-  const start = (page - 1) * limit;
-  const paginatedLogs = logs.slice(start, start + parseInt(limit));
-  
+  const { page = 1, limit = 20, status, channel, event, recipient } = req.query;
+  const query = {};
+
+  if (status) query.status = status;
+  if (channel) query.channel = channel;
+  if (event) query.event = event;
+  if (recipient) query.$or = [
+    { 'recipient.email': new RegExp(recipient, 'i') },
+    { 'recipient.phone': new RegExp(recipient, 'i') },
+  ];
+
+  const total = await NotificationLog.countDocuments(query);
+  const logs = await NotificationLog.find(query)
+    .populate('template', 'name category trigger')
+    .populate('user', 'name email')
+    .sort('-createdAt')
+    .skip((page - 1) * limit)
+    .limit(parseInt(limit, 10));
+
   res.status(200).json({
     success: true,
-    count: paginatedLogs.length,
-    total: logs.length,
-    page: parseInt(page),
-    limit: parseInt(limit),
-    data: paginatedLogs,
+    data: logs.map(normalizeDocument),
+    pagination: {
+      total,
+      page: parseInt(page, 10),
+      limit: parseInt(limit, 10),
+      pages: Math.ceil(total / limit),
+    },
   });
 });
 
 exports.getNotificationLogDetails = asyncHandler(async (req, res) => {
   const { logId } = req.params;
-  const log = notificationLogs.get(logId);
-  
+  const log = await NotificationLog.findById(logId)
+    .populate('template', 'name category trigger')
+    .populate('user', 'name email');
+
   if (!log) {
     return res.status(404).json({
       success: false,
       message: 'Notification log not found',
     });
   }
-  
+
   res.status(200).json({
     success: true,
-    data: log,
+    data: normalizeDocument(log),
   });
 });
 
 exports.createNotificationLog = asyncHandler(async (req, res) => {
-  const { templateId, userId, type, recipient, status, event } = req.body;
-  
-  const logId = `ntf_${Date.now()}`;
-  const log = {
-    id: logId,
+  const {
     templateId,
     userId,
-    type, // email, sms, push
-    recipient,
-    status, // pending, sent, failed
+    channel,
+    subject,
+    content,
+    recipient = {},
+    status = 'pending',
     event,
-    attempts: 1,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-  
-  notificationLogs.set(logId, log);
-  
+    variables = {},
+    order,
+    externalId = '',
+    metadata = {},
+  } = req.body;
+
+  if (!templateId || !userId || !content || !channel) {
+    return res.status(400).json({
+      success: false,
+      message: 'templateId, userId, channel and content are required',
+    });
+  }
+
+  const user = await User.findById(userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  const log = new NotificationLog({
+    template: templateId,
+    user: userId,
+    order,
+    channel,
+    subject,
+    content,
+    recipient,
+    status,
+    event,
+    variables,
+    externalId,
+    metadata,
+  });
+
+  await log.save();
+
   res.status(201).json({
     success: true,
     message: 'Notification log created successfully',
-    data: log,
+    data: normalizeDocument(log),
   });
 });
 
 exports.getNotificationStats = asyncHandler(async (req, res) => {
-  const logs = Array.from(notificationLogs.values());
-  
-  const stats = {
-    total: logs.length,
-    sent: logs.filter(l => l.status === 'sent').length,
-    failed: logs.filter(l => l.status === 'failed').length,
-    pending: logs.filter(l => l.status === 'pending').length,
-    byType: {
-      email: logs.filter(l => l.type === 'email').length,
-      sms: logs.filter(l => l.type === 'sms').length,
-      push: logs.filter(l => l.type === 'push').length,
-    },
-  };
-  
+  const total = await NotificationLog.countDocuments();
+  const sent = await NotificationLog.countDocuments({ status: 'sent' });
+  const failed = await NotificationLog.countDocuments({ status: 'failed' });
+  const pending = await NotificationLog.countDocuments({ status: 'pending' });
+  const byChannel = await NotificationLog.aggregate([
+    { $group: { _id: '$channel', count: { $sum: 1 } } },
+  ]);
+
+  const byType = byChannel.reduce((acc, item) => {
+    acc[item._id] = item.count;
+    return acc;
+  }, {});
+
   res.status(200).json({
     success: true,
-    data: stats,
+    data: {
+      total,
+      sent,
+      failed,
+      pending,
+      byType,
+    },
   });
 });
 
-// MARKETING RULES
 exports.getAllMarketingRules = asyncHandler(async (req, res) => {
-  const rules = Array.from(marketingRules.values());
+  const { trigger, active, page = 1, limit = 50 } = req.query;
+  const query = {};
+
+  if (trigger) query.trigger = trigger;
+  if (active !== undefined) query.active = active === 'true';
+
+  const total = await NotificationMarketingRule.countDocuments(query);
+  const rules = await NotificationMarketingRule.find(query)
+    .populate('templates', 'name displayName')
+    .sort('-createdAt')
+    .skip((page - 1) * limit)
+    .limit(parseInt(limit, 10));
+
   res.status(200).json({
     success: true,
-    count: rules.length,
-    data: rules,
+    data: rules.map(normalizeDocument),
+    pagination: {
+      total,
+      page: parseInt(page, 10),
+      limit: parseInt(limit, 10),
+      pages: Math.ceil(total / limit),
+    },
   });
 });
 
 exports.createMarketingRule = asyncHandler(async (req, res) => {
-  const { name, trigger, condition, templates, audience, frequency, active } = req.body;
-  
-  const ruleId = `mrk_${Date.now()}`;
-  const rule = {
-    id: ruleId,
+  const {
     name,
-    trigger, // signup, purchase, abandoned_cart, etc
-    condition: condition || {},
-    templates: templates || [],
-    audience: audience || {},
-    frequency: frequency || 'once',
-    active: active !== false,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-  
-  marketingRules.set(ruleId, rule);
-  
+    trigger,
+    description = '',
+    conditions = [],
+    templates = [],
+    audience = {},
+    frequency = 'once',
+    active = true,
+    metadata = {},
+    tags = [],
+  } = req.body;
+
+  const rule = new NotificationMarketingRule({
+    name,
+    description,
+    trigger,
+    conditions,
+    templates,
+    audience,
+    frequency,
+    active,
+    metadata,
+    tags,
+    createdBy: req.adminUser._id,
+    updatedBy: req.adminUser._id,
+  });
+
+  await rule.save();
+
+  await AuditLog.create({
+    actor: req.adminUser._id,
+    action: 'create_marketing_rule',
+    entityType: 'marketing_rule',
+    entityId: rule._id,
+    status: 'success',
+    severity: 'info',
+    ipAddress: req.ip,
+    resourcePath: req.originalUrl,
+    changes: { after: rule.toObject() },
+  });
+
   res.status(201).json({
     success: true,
     message: 'Marketing rule created successfully',
-    data: rule,
+    data: normalizeDocument(rule),
   });
 });
 
 exports.updateMarketingRule = asyncHandler(async (req, res) => {
   const { ruleId } = req.params;
-  const rule = marketingRules.get(ruleId);
-  
+  const rule = await NotificationMarketingRule.findById(ruleId);
+
   if (!rule) {
     return res.status(404).json({
       success: false,
       message: 'Marketing rule not found',
     });
   }
-  
-  const updated = {
-    ...rule,
-    ...req.body,
-    updatedAt: new Date(),
-  };
-  
-  marketingRules.set(ruleId, updated);
-  
+
+  const before = rule.toObject();
+  Object.assign(rule, req.body);
+  rule.updatedBy = req.adminUser._id;
+  await rule.save();
+
+  await AuditLog.create({
+    actor: req.adminUser._id,
+    action: 'update_marketing_rule',
+    entityType: 'marketing_rule',
+    entityId: rule._id,
+    status: 'success',
+    severity: 'info',
+    ipAddress: req.ip,
+    resourcePath: req.originalUrl,
+    changes: { before, after: rule.toObject() },
+  });
+
   res.status(200).json({
     success: true,
     message: 'Marketing rule updated successfully',
-    data: updated,
+    data: normalizeDocument(rule),
   });
 });
 
 exports.deleteMarketingRule = asyncHandler(async (req, res) => {
   const { ruleId } = req.params;
-  
-  if (!marketingRules.has(ruleId)) {
+  const rule = await NotificationMarketingRule.findById(ruleId);
+
+  if (!rule) {
     return res.status(404).json({
       success: false,
       message: 'Marketing rule not found',
     });
   }
-  
-  marketingRules.delete(ruleId);
-  
+
+  await rule.deleteOne();
+
+  await AuditLog.create({
+    actor: req.adminUser._id,
+    action: 'delete_marketing_rule',
+    entityType: 'marketing_rule',
+    entityId: rule._id,
+    status: 'success',
+    severity: 'warning',
+    ipAddress: req.ip,
+    resourcePath: req.originalUrl,
+    changes: { before: normalizeDocument(rule) },
+  });
+
   res.status(200).json({
     success: true,
     message: 'Marketing rule deleted successfully',

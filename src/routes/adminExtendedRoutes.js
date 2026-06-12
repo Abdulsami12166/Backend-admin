@@ -1,5 +1,5 @@
 const express = require('express');
-const { authorizeAdmin, authorizePermission } = require('../middleware/adminAuthMiddleware');
+const { authorizeAdmin, authorizePermission, authorizeRoles } = require('../middleware/adminAuthMiddleware');
 
 // Import all controllers
 const customerController = require('../controllers/admin/customerAdminController');
@@ -138,14 +138,14 @@ router.patch('/notifications/marketing-rules/:ruleId', authorizeAdmin, authorize
 router.delete('/notifications/marketing-rules/:ruleId', authorizeAdmin, authorizePermission('marketing:manage'), notificationController.deleteMarketingRule);
 
 // ============ SESSIONS ============
-router.get('/sessions', authorizeAdmin, authorizePermission('admins:view'), sessionController.getAllActiveSessions);
-router.get('/sessions/admin/:adminId', authorizeAdmin, authorizePermission('admins:view'), sessionController.getAdminSessions);
-router.get('/sessions/:sessionId', authorizeAdmin, authorizePermission('admins:view'), sessionController.getSessionDetails);
-router.post('/sessions', authorizeAdmin, sessionController.createSession);
-router.post('/sessions/:sessionId/logout', authorizeAdmin, authorizePermission('admins:manage'), sessionController.forceLogout);
-router.post('/sessions/admin/:adminId/logout-all', authorizeAdmin, authorizePermission('admins:manage'), sessionController.forceLogoutAllForAdmin);
-router.patch('/sessions/:sessionId/activity', authorizeAdmin, sessionController.updateSessionActivity);
-router.get('/sessions/stats/overview', authorizeAdmin, authorizePermission('analytics:view'), sessionController.getSessionStats);
+router.get('/sessions', authorizeAdmin, authorizeRoles('super-admin'), sessionController.getAllActiveSessions);
+router.get('/sessions/admin/:adminId', authorizeAdmin, authorizeRoles('super-admin'), sessionController.getAdminSessions);
+router.get('/sessions/:sessionId', authorizeAdmin, authorizeRoles('super-admin'), sessionController.getSessionDetails);
+router.post('/sessions', authorizeAdmin, authorizeRoles('super-admin'), sessionController.createSession);
+router.post('/sessions/:sessionId/logout', authorizeAdmin, authorizeRoles('super-admin'), sessionController.forceLogout);
+router.post('/sessions/admin/:adminId/logout-all', authorizeAdmin, authorizeRoles('super-admin'), sessionController.forceLogoutAllForAdmin);
+router.patch('/sessions/:sessionId/activity', authorizeAdmin, authorizeRoles('super-admin'), sessionController.updateSessionActivity);
+router.get('/sessions/stats/overview', authorizeAdmin, authorizeRoles('super-admin'), sessionController.getSessionStats);
 
 // ============ ORDER TIMELINE ============
 router.get('/orders/:orderId/timeline', authorizeAdmin, authorizePermission('orders:view'), orderTimelineController.getOrderTimeline);
