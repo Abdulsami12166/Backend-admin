@@ -39,7 +39,7 @@ const ticketSchema = new mongoose.Schema(
       default: 'minor',
     },
     messages: [ticketMessageSchema],
-    assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminUser', sparse: true },
+    assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminUser', sparse: true, index: true },
     tags: [{ type: String }],
     resolution: {
       solution: { type: String, default: '' },
@@ -82,12 +82,11 @@ ticketSchema.pre('save', async function(next) {
 });
 
 // Indexes
-ticketSchema.index({ ticketNumber: 1 });
+// ticketNumber is already unique and indexed via field-level unique: true
 ticketSchema.index({ user: 1 });
 ticketSchema.index({ order: 1 });
 ticketSchema.index({ status: 1 });
 ticketSchema.index({ priority: 1 });
-ticketSchema.index({ assignedTo: 1 });
 ticketSchema.index({ createdAt: -1 });
 ticketSchema.index({ category: 1 });
 

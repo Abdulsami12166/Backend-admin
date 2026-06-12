@@ -7,7 +7,6 @@ const rolePermissionSchema = new mongoose.Schema(
       enum: ['super-admin', 'product-manager', 'inventory-manager', 'support'],
       required: true,
       unique: true,
-      index: true,
     },
     permissions: [{ type: String, required: true }],
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

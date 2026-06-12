@@ -52,7 +52,7 @@ const notificationTemplateSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-notificationTemplateSchema.index({ name: 1 });
+// name is already unique and indexed via field-level unique: true
 notificationTemplateSchema.index({ trigger: 1 });
 notificationTemplateSchema.index({ category: 1 });
 notificationTemplateSchema.index({ isActive: 1 });

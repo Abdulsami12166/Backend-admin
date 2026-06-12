@@ -52,7 +52,6 @@ const shipmentSchema = new mongoose.Schema(
 );
 
 // Index for tracking
-shipmentSchema.index({ trackingNumber: 1 });
 shipmentSchema.index({ order: 1 });
 shipmentSchema.index({ status: 1 });
 shipmentSchema.index({ createdAt: -1 });

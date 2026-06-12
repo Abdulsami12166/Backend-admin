@@ -43,6 +43,4 @@ const notificationPreferenceSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-notificationPreferenceSchema.index({ user: 1 });
-
 module.exports = mongoose.model('NotificationPreference', notificationPreferenceSchema);

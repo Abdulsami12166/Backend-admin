@@ -34,7 +34,7 @@ const storeSettingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-storeSettingSchema.index({ key: 1 });
+// key is already unique and indexed via field-level unique: true
 storeSettingSchema.index({ category: 1 });
 storeSettingSchema.index({ section: 1 });
 storeSettingSchema.index({ category: 1, section: 1 });

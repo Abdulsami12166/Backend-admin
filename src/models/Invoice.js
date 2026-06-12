@@ -107,7 +107,7 @@ invoiceSchema.pre('save', function(next) {
 });
 
 // Indexes
-invoiceSchema.index({ invoiceNumber: 1 });
+// invoiceNumber is already unique and indexed via field-level unique: true
 invoiceSchema.index({ order: 1 });
 invoiceSchema.index({ user: 1 });
 invoiceSchema.index({ status: 1 });

@@ -55,7 +55,7 @@ const featureToggleSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-featureToggleSchema.index({ name: 1 });
+// name is already unique and indexed via field-level unique: true
 featureToggleSchema.index({ category: 1 });
 featureToggleSchema.index({ isEnabled: 1 });
 featureToggleSchema.index({ visibility: 1 });

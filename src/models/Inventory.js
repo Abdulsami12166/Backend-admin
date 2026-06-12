@@ -37,6 +37,5 @@ inventorySchema.pre('save', function(next) {
 // Index for low stock queries
 inventorySchema.index({ currentStock: 1 });
 inventorySchema.index({ availableStock: 1 });
-inventorySchema.index({ product: 1 });
 
 module.exports = mongoose.model('Inventory', inventorySchema);

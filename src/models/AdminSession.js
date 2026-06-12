@@ -43,7 +43,6 @@ const adminSessionSchema = new mongoose.Schema(
 
 // Index for efficient querying
 adminSessionSchema.index({ adminUser: 1 });
-adminSessionSchema.index({ sessionToken: 1 });
 adminSessionSchema.index({ isActive: 1 });
 adminSessionSchema.index({ expiresAt: 1 });
 adminSessionSchema.index({ adminUser: 1, isActive: 1 });
