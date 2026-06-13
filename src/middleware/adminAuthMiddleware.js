@@ -59,7 +59,6 @@ const adminLogin = async (req, res, next) => {
     await AdminSession.create({
       adminUser: user._id,
       sessionToken,
-      refreshToken: '',
       ipAddress: req.ip || req.headers['x-forwarded-for'] || 'unknown',
       userAgent: req.headers['user-agent'] || '',
       loginAt: new Date(),

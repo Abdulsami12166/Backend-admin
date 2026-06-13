@@ -105,7 +105,6 @@ exports.createSession = asyncHandler(async (req, res) => {
     adminUser: adminUser._id,
     adminEmail: adminEmail || adminUser.email,
     sessionToken,
-    refreshToken: '',
     ipAddress: ipAddress || req.ip || req.headers['x-forwarded-for'] || 'unknown',
     userAgent: userAgent || req.headers['user-agent'] || '',
     loginAt: loginTime ? new Date(loginTime) : new Date(),
