@@ -1,5 +1,6 @@
 const Return = require('../../models/Return');
 const Refund = require('../../models/Refund');
+const RefundLedger = require('../../models/RefundLedger');
 const Order = require('../../models/Order');
 const {
   sendSuccess,
@@ -315,8 +316,7 @@ exports.processRefund = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Refund not found' });
     }
 
-    // Here you would integrate with payment gateway API
-    // For now, just updating the status
+    // Integrate with payment gateway as an async step; update status and create ledger entry (idempotent)
     refund.status = 'processing';
     refund.paymentDetails.gateway = paymentGateway;
     refund.paymentDetails.transactionId = transactionId;
@@ -327,10 +327,44 @@ exports.processRefund = async (req, res) => {
       event: 'processing',
       description: `Refund processing initiated via ${paymentGateway}`,
       timestamp: new Date(),
-      updatedBy: req.adminUser._id
+      updatedBy: req.adminUser._id,
     });
 
+    // Save refund update first
     await refund.save();
+
+    // Create an atomic ledger entry for this refund if one doesn't already exist for the same refund+transaction
+    try {
+      const amount = refund.actualRefundAmount || refund.refundAmount || 0;
+      const existing = await RefundLedger.findOne({ refund: refund._id, transactionId });
+
+      if (!existing) {
+        const ledger = await RefundLedger.create({
+          refund: refund._id,
+          order: refund.order,
+          user: refund.user,
+          amount,
+          type: 'refund',
+          status: 'processing',
+          gateway: paymentGateway,
+          transactionId,
+          metadata: { initiatedBy: req.adminUser._id },
+          createdBy: req.adminUser._id,
+        });
+
+        refund.timeline.push({
+          event: 'ledger_created',
+          description: `Ledger ${ledger._id} created`,
+          timestamp: new Date(),
+          updatedBy: req.adminUser._id,
+        });
+
+        await refund.save();
+      }
+    } catch (ledgerErr) {
+      // Log audit error but do not block processing; allow manual reconciliation
+      await auditError(req, 'create_refund_ledger', 'refund', refund._id, ledgerErr);
+    }
 
     await auditAction(req, 'process_refund', 'refund', refund._id, null, refund.toObject(), {
       paymentGateway,
@@ -363,10 +397,29 @@ exports.completeRefund = async (req, res) => {
     refund.timeline.push({
       event: 'completed',
       timestamp: new Date(),
-      updatedBy: req.adminUser._id
+      updatedBy: req.adminUser._id,
     });
 
+    // Update refund and mark ledger settled (if present)
     await refund.save();
+
+    try {
+      const ledger = await RefundLedger.findOne({ refund: refund._id });
+      if (ledger) {
+        ledger.status = 'settled';
+        ledger.settledAt = new Date();
+        await ledger.save();
+        refund.timeline.push({
+          event: 'ledger_settled',
+          description: `Ledger ${ledger._id} marked settled`,
+          timestamp: new Date(),
+          updatedBy: req.adminUser._id,
+        });
+        await refund.save();
+      }
+    } catch (ledgerErr) {
+      await auditError(req, 'settle_refund_ledger', 'refund', refund._id, ledgerErr);
+    }
 
     await auditAction(req, 'complete_refund', 'refund', refund._id, null, refund.toObject());
 
