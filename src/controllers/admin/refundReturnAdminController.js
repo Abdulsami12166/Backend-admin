@@ -361,6 +361,28 @@ exports.processRefund = async (req, res) => {
 
         await refund.save();
       }
+      // If a gateway and transactionId were provided and gateway supports immediate refund, attempt to call it
+      if (paymentGateway && transactionId && paymentGateway.toLowerCase() === 'razorpay') {
+        try {
+          const { refundPayment } = require('../../services/paymentGateway');
+          // amount to paise
+          const amountPaise = Math.round((refund.actualRefundAmount || refund.refundAmount || 0) * 100);
+          const razorRefund = await refundPayment(transactionId, amountPaise, { refundId: String(refund._id) });
+          // Save gateway refund id
+          refund.paymentDetails.refundId = razorRefund.id || refund.paymentDetails.refundId;
+          refund.paymentDetails.gateway = 'razorpay';
+          refund.timeline.push({
+            event: 'gateway_refund_initiated',
+            description: `Refund requested from Razorpay: ${razorRefund.id}`,
+            timestamp: new Date(),
+            updatedBy: req.adminUser._id,
+          });
+          await refund.save();
+        } catch (gwErr) {
+          // Do not fail whole request if gateway call fails; log audit
+          await auditError(req, 'gateway_refund_failed', 'refund', refund._id, gwErr);
+        }
+      }
     } catch (ledgerErr) {
       // Log audit error but do not block processing; allow manual reconciliation
       await auditError(req, 'create_refund_ledger', 'refund', refund._id, ledgerErr);
