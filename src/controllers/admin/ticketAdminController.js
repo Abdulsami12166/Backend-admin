@@ -2,6 +2,7 @@ const Ticket = require('../../models/Ticket');
 const Order = require('../../models/Order');
 const User = require('../../models/User');
 const AuditLog = require('../../models/AuditLog');
+const { emitToAdmins, socketEvents } = require('../../utils/eventBus');
 
 /**
  * Get all tickets with filters
@@ -95,6 +96,17 @@ exports.createTicket = async (req, res) => {
 
     await ticket.save();
 
+    // Emit ticket event for admin realtime UI
+    emitToAdmins(req.app, socketEvents.DOMAIN.TICKET_CREATED, {
+      ticketId: String(ticket._id),
+      userId: String(userId),
+      subject: ticket.subject,
+      status: ticket.status,
+      priority: ticket.priority,
+      category: ticket.category,
+      assignedTo: ticket.assignedTo?.toString() || null,
+    });
+
     // Log audit
     await AuditLog.create({
       actor: req.adminUser?._id || userId,
@@ -131,6 +143,13 @@ exports.assignTicket = async (req, res) => {
     ticket.status = 'in_progress';
 
     await ticket.save();
+
+    emitToAdmins(req.app, socketEvents.DOMAIN.TICKET_UPDATED, {
+      ticketId: String(ticket._id),
+      status: ticket.status,
+      priority: ticket.priority,
+      assignedTo: ticket.assignedTo?.toString() || null,
+    });
 
     res.json({ success: true, data: ticket, message: 'Ticket assigned' });
   } catch (error) {
@@ -169,6 +188,23 @@ exports.addMessage = async (req, res) => {
     ticket.lastActivityAt = new Date();
     await ticket.save();
 
+    emitToAdmins(req.app, socketEvents.DOMAIN.TICKET_UPDATED, {
+      ticketId: String(ticket._id),
+      status: ticket.status,
+      priority: ticket.priority,
+      assignedTo: ticket.assignedTo?.toString() || null,
+      message: ticket.messages.at(-1)?.message || undefined,
+    });
+
+    emitToAdmins(req.app, socketEvents.DOMAIN.TICKET_MESSAGE_ADDED, {
+      ticketId: String(ticket._id),
+      message: ticket.messages.at(-1)?.message || undefined,
+      senderType,
+      updatedBy: String(senderId),
+      status: ticket.status,
+      assignedTo: ticket.assignedTo?.toString() || null,
+    });
+
     res.json({ success: true, data: ticket, message: 'Message added' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -200,6 +236,13 @@ exports.updateTicketStatus = async (req, res) => {
     }
 
     await ticket.save();
+
+    emitToAdmins(req.app, socketEvents.DOMAIN.TICKET_UPDATED, {
+      ticketId: String(ticket._id),
+      status: ticket.status,
+      priority: ticket.priority,
+      assignedTo: ticket.assignedTo?.toString() || null,
+    });
 
     // Log audit
     await AuditLog.create({
@@ -241,6 +284,13 @@ exports.escalateTicket = async (req, res) => {
     ticket.assignedTo = escalateTo;
 
     await ticket.save();
+
+    emitToAdmins(req.app, socketEvents.DOMAIN.TICKET_UPDATED, {
+      ticketId: String(ticket._id),
+      status: ticket.status,
+      priority: ticket.priority,
+      assignedTo: ticket.assignedTo?.toString() || null,
+    });
 
     res.json({ success: true, data: ticket, message: 'Ticket escalated' });
   } catch (error) {

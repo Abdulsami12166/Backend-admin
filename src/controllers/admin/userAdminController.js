@@ -160,6 +160,64 @@ const getAdminUserOrders = async (req, res, next) => {
   }
 };
 
+const getUserActivities = async (req, res, next) => {
+  try {
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 50;
+    const skip = (Math.max(page, 1) - 1) * limit;
+    const query = { user: req.params.id };
+
+    const total = await UserActivity.countDocuments(query);
+    const activities = await UserActivity.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    return sendSuccess(res, 200, 'User activities fetched successfully', { total, activities });
+  } catch (e) {
+    next(e);
+  }
+};
+
+const getUserLoginHistory = async (req, res, next) => {
+  try {
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 50;
+    const skip = (Math.max(page, 1) - 1) * limit;
+    const query = { user: req.params.id, action: { $in: ['login', 'logout'] } };
+
+    const total = await UserActivity.countDocuments(query);
+    const history = await UserActivity.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    return sendSuccess(res, 200, 'User login history fetched successfully', { total, history });
+  } catch (e) {
+    next(e);
+  }
+};
+
+const getUserPayments = async (req, res, next) => {
+  try {
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 50;
+    const skip = (Math.max(page, 1) - 1) * limit;
+
+    const query = { user: req.params.id };
+    const total = await Order.countDocuments(query);
+    const payments = await Order.find(query)
+      .select('orderStatus paymentStatus paymentMethod paymentReference razorpayOrderId razorpayPaymentId totalAmount createdAt')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    return sendSuccess(res, 200, 'User payment/order details fetched successfully', { total, payments });
+  } catch (e) {
+    next(e);
+  }
+};
+
 const adminDeleteUser = async (req, res, next) => {
   try {
     const user = await User.findById(req.params.id);

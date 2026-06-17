@@ -2,6 +2,7 @@ const asyncHandler = require('../../middleware/asyncHandler');
 const AdminSession = require('../../models/AdminSession');
 const AuditLog = require('../../models/AuditLog');
 const User = require('../../models/User');
+const UserActivity = require('../../models/UserActivity');
 
 const sanitizeSearch = value => typeof value === 'string' && value.trim() ? value.trim() : null;
 
@@ -135,6 +136,18 @@ exports.forceLogout = asyncHandler(async (req, res) => {
   session.logoutAt = new Date();
   await session.save();
 
+  // record admin logout activity
+  try {
+    await UserActivity.create({
+      user: session.adminUser,
+      action: 'logout',
+      details: 'Admin session forcefully terminated',
+      ipAddress: req.ip || '',
+      userAgent: req.headers['user-agent'] || '',
+    });
+  } catch (e) {
+    // swallow - non-critical
+  }
   await AuditLog.create({
     actor: req.adminUser._id,
     action: 'force_logout',

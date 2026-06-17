@@ -7,6 +7,7 @@ const {
   sendError,
   sendServerError,
 } = require('../../utils/feedback');
+const { emitToAdmins, socketEvents } = require('../../utils/eventBus');
 const { auditAction, auditError } = require('../../utils/workflow');
 
 // ============ RETURNS ============
@@ -262,6 +263,13 @@ exports.approveRefund = async (req, res) => {
 
     await refund.save();
 
+    emitToAdmins(req.app, socketEvents.DOMAIN.REFUND_UPDATED, {
+      refundId: String(refund._id),
+      status: refund.status,
+      refundStatus: refund.refundStatus,
+      approvedBy: refund.approvedBy?.toString() || null,
+    });
+
     await auditAction(req, 'approve_refund', 'refund', refund._id, null, refund.toObject());
 
     return sendSuccess(res, 200, 'Refund approved successfully', { refund });
@@ -294,6 +302,13 @@ exports.rejectRefund = async (req, res) => {
     });
 
     await refund.save();
+
+    emitToAdmins(req.app, socketEvents.DOMAIN.REFUND_UPDATED, {
+      refundId: String(refund._id),
+      status: refund.status,
+      refundStatus: refund.refundStatus,
+      rejectionReason: refund.rejectionReason,
+    });
 
     await auditAction(req, 'reject_refund', 'refund', refund._id, null, refund.toObject());
 
@@ -360,6 +375,15 @@ exports.processRefund = async (req, res) => {
         });
 
         await refund.save();
+
+        emitToAdmins(req.app, socketEvents.DOMAIN.REFUND_LEDGER_UPDATED, {
+          refundId: String(refund._id),
+          ledgerId: String(ledger._id),
+          transactionId,
+          status: ledger.status,
+          gateway: ledger.gateway,
+          amount,
+        });
       }
       // If a gateway and transactionId were provided and gateway supports immediate refund, attempt to call it
       if (paymentGateway && transactionId && paymentGateway.toLowerCase() === 'razorpay') {
@@ -391,6 +415,13 @@ exports.processRefund = async (req, res) => {
     await auditAction(req, 'process_refund', 'refund', refund._id, null, refund.toObject(), {
       paymentGateway,
       transactionId,
+    });
+
+    emitToAdmins(req.app, socketEvents.DOMAIN.REFUND_UPDATED, {
+      refundId: String(refund._id),
+      status: refund.status,
+      refundStatus: refund.refundStatus,
+      paymentDetails: refund.paymentDetails,
     });
 
     return sendSuccess(res, 200, 'Refund processing initiated', { refund });
@@ -425,6 +456,13 @@ exports.completeRefund = async (req, res) => {
     // Update refund and mark ledger settled (if present)
     await refund.save();
 
+    emitToAdmins(req.app, socketEvents.DOMAIN.REFUND_UPDATED, {
+      refundId: String(refund._id),
+      status: refund.status,
+      refundStatus: refund.refundStatus,
+      completionDate: refund.completionDate,
+    });
+
     try {
       const ledger = await RefundLedger.findOne({ refund: refund._id });
       if (ledger) {
@@ -438,6 +476,13 @@ exports.completeRefund = async (req, res) => {
           updatedBy: req.adminUser._id,
         });
         await refund.save();
+
+        emitToAdmins(req.app, socketEvents.DOMAIN.REFUND_LEDGER_UPDATED, {
+          refundId: String(refund._id),
+          ledgerId: String(ledger._id),
+          status: ledger.status,
+          settledAt: ledger.settledAt,
+        });
       }
     } catch (ledgerErr) {
       await auditError(req, 'settle_refund_ledger', 'refund', refund._id, ledgerErr);

@@ -24,6 +24,9 @@ const {
   getAdminAccessControl,
   getAdminUsers,
   getAdminUserOrders,
+  getUserActivities,
+  getUserLoginHistory,
+  getUserPayments,
   adminDeleteUser,
   adminBlockUser,
   adminUnblockUser,
@@ -74,6 +77,9 @@ router.patch('/admins/:id/role', authorizeAdmin, authorizePermission('roles:assi
 
 router.get('/users', authorizeAdmin, authorizePermission('users:view'), getAdminUsers);
 router.get('/users/:id/orders', authorizeAdmin, authorizePermission('users:view'), getAdminUserOrders);
+router.get('/users/:id/activity', authorizeAdmin, authorizePermission('users:view'), getUserActivities);
+router.get('/users/:id/login-history', authorizeAdmin, authorizePermission('users:view'), getUserLoginHistory);
+router.get('/users/:id/payments', authorizeAdmin, authorizePermission('transactions:view'), getUserPayments);
 router.delete('/users/:id', authorizeAdmin, authorizePermission('users:control'), adminDeleteUser);
 router.post('/users/:id/block', authorizeAdmin, authorizePermission('users:control'), adminBlockUser);
 router.post('/users/:id/unblock', authorizeAdmin, authorizePermission('users:control'), adminUnblockUser);

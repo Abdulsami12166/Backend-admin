@@ -68,6 +68,21 @@ const adminLogin = async (req, res, next) => {
       adminEmail: user.email,
     });
 
+    // record admin login activity
+    try {
+      const UserActivity = require('../models/UserActivity');
+      await UserActivity.create({
+        user: user._id,
+        action: 'login',
+        //count+1
+        details: 'Admin logged in',
+        ipAddress: req.ip || req.headers['x-forwarded-for'] || 'unknown',
+        userAgent: req.headers['user-agent'] || '',
+      });
+    } catch (e) {
+      logger.warn('Failed to record admin login activity', { error: e.message });
+    }
+
     logger.info('Admin logged in', { userId: user._id, email: user.email, sessionId });
 
     return res.json({

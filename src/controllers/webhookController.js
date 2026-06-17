@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { sendSuccess, sendError, sendServerError } = require('../utils/feedback');
 const Refund = require('../models/Refund');
 const RefundLedger = require('../models/RefundLedger');
+const { emitToAdmins, socketEvents } = require('../utils/eventBus');
 
 /**
  * Razorpay webhook handler
@@ -56,6 +57,18 @@ exports.razorpayWebhook = async (req, res) => {
               refund.completionDate = new Date();
               refund.timeline.push({ event: 'webhook_settled', description: `Refund settled via webhook ${refundId}`, timestamp: new Date() });
               await refund.save();
+
+              emitToAdmins(req.app, socketEvents.DOMAIN.REFUND_UPDATED, {
+                refundId: String(refund._id),
+                status: refund.status,
+                refundStatus: refund.refundStatus,
+              });
+              emitToAdmins(req.app, socketEvents.DOMAIN.REFUND_LEDGER_UPDATED, {
+                refundId: String(refund._id),
+                ledgerId: String(ledger._id),
+                status: ledger.status,
+                settledAt: ledger.settledAt,
+              });
             }
           }
         }
