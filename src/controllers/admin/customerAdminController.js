@@ -7,10 +7,11 @@ const NotificationPreference = require('../../models/NotificationPreference');
  */
 exports.getAllCustomers = async (req, res) => {
   try {
-    const { page = 1, limit = 20, search, status, sortBy = '-createdAt' } = req.query;
+    const { page = 1, limit = 20, search, status, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
     const skip = (page - 1) * limit;
 
-    let query = {};
+    // Only return customers (role: 'user'), not admins
+    let query = { role: 'user' };
     
     if (search) {
       query.$or = [
@@ -24,9 +25,12 @@ exports.getAllCustomers = async (req, res) => {
       query.status = status;
     }
 
+    // Build sort object respecting sortOrder param
+    const sortField = sortOrder === 'asc' ? sortBy : `-${sortBy}`;
+
     const total = await User.countDocuments(query);
     const customers = await User.find(query)
-      .sort(sortBy)
+      .sort(sortField)
       .skip(skip)
       .limit(parseInt(limit))
       .select('-password');
@@ -170,7 +174,8 @@ exports.updateNotificationPreferences = async (req, res) => {
 exports.toggleCustomerStatus = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { action } = req.body; // 'block' or 'unblock'
+    // Infer action from URL path if not provided in body
+    const action = req.body.action || (req.path.endsWith('/block') ? 'block' : 'unblock');
 
     const customer = await User.findById(userId);
     if (!customer) {

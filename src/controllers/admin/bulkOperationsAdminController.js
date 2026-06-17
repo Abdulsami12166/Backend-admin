@@ -1,239 +1,274 @@
+const Product = require('../../models/Product');
+const Inventory = require('../../models/Inventory');
 const asyncHandler = require('../../middleware/asyncHandler');
 
-// Mock data for bulk operations
-const bulkJobs = new Map();
-const operationLogs = new Map();
+/**
+ * Build a synchronous job-result response (no persistent job store needed for synchronous ops).
+ */
+function jobResult(type, opts = {}) {
+  return {
+    id: `bulk_${Date.now()}`,
+    type,
+    status: 'completed',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...opts,
+  };
+}
 
+// GET /admin/bulk-operations  — list historical jobs (no persistent store; return empty)
 exports.getBulkOperations = asyncHandler(async (req, res) => {
-  const operations = Array.from(bulkJobs.values());
-  
   res.status(200).json({
     success: true,
-    count: operations.length,
-    data: operations,
+    count: 0,
+    data: [],
+    message: 'Bulk operations are executed synchronously. Check product/inventory data for results.',
   });
 });
 
+// GET /admin/bulk-operations/:jobId
 exports.getBulkOperationDetails = asyncHandler(async (req, res) => {
-  const { jobId } = req.params;
-  const operation = bulkJobs.get(jobId);
-  
-  if (!operation) {
-    return res.status(404).json({
-      success: false,
-      message: 'Bulk operation not found',
-    });
-  }
-  
-  res.status(200).json({
-    success: true,
-    data: operation,
+  res.status(404).json({
+    success: false,
+    message: 'Bulk operation job not found. Operations are executed synchronously.',
   });
 });
 
-// BULK PRODUCT VISIBILITY
+// POST /admin/bulk-operations/visibility
 exports.bulkToggleProductVisibility = asyncHandler(async (req, res) => {
   const { productIds, visible, scheduleDate } = req.body;
-  
+
   if (!productIds || productIds.length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: 'Product IDs are required',
+    return res.status(400).json({ success: false, message: 'productIds are required' });
+  }
+
+  if (scheduleDate) {
+    // Scheduled operations would need a job queue — acknowledge and advise
+    return res.status(202).json({
+      success: true,
+      message: 'Scheduled bulk operations require a job-queue service. Execute immediately instead.',
+      data: jobResult('bulk_visibility_toggle', {
+        status: 'scheduled',
+        productIds,
+        action: visible ? 'show' : 'hide',
+        scheduleDate,
+        totalProducts: productIds.length,
+        processedProducts: 0,
+      }),
     });
   }
-  
-  const jobId = `bulk_${Date.now()}`;
-  const operation = {
-    id: jobId,
-    type: 'bulk_visibility_toggle',
-    status: scheduleDate ? 'scheduled' : 'processing',
-    productIds,
-    action: visible ? 'show' : 'hide',
-    scheduleDate: scheduleDate || null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    totalProducts: productIds.length,
-    processedProducts: 0,
-    errorCount: 0,
-  };
-  
-  bulkJobs.set(jobId, operation);
-  
-  // Log the operation
-  const logId = `log_${Date.now()}`;
-  operationLogs.set(logId, {
-    id: logId,
-    jobId,
-    action: 'bulk_visibility_toggle',
-    details: `${operation.action} ${productIds.length} products`,
-    status: operation.status,
-    timestamp: new Date(),
-  });
-  
-  res.status(202).json({
+
+  const result = await Product.updateMany(
+    { _id: { $in: productIds } },
+    { $set: { isPublished: Boolean(visible) } },
+  );
+
+  res.status(200).json({
     success: true,
-    message: 'Bulk operation initiated successfully',
-    data: operation,
+    message: `${result.modifiedCount} product(s) visibility updated`,
+    data: jobResult('bulk_visibility_toggle', {
+      productIds,
+      action: visible ? 'show' : 'hide',
+      totalProducts: productIds.length,
+      processedProducts: result.modifiedCount,
+      errorCount: productIds.length - result.modifiedCount,
+    }),
   });
 });
 
-// BULK INVENTORY UPDATE
+// POST /admin/bulk-operations/inventory
 exports.bulkUpdateInventory = asyncHandler(async (req, res) => {
-  const { updates } = req.body; // Array of {productId, quantity, action}
-  
+  const { updates } = req.body; // [{ productId, quantity, action: 'set'|'increment'|'decrement' }]
+
   if (!updates || updates.length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: 'Updates are required',
-    });
+    return res.status(400).json({ success: false, message: 'updates array is required' });
   }
-  
-  const jobId = `bulk_${Date.now()}`;
-  const operation = {
-    id: jobId,
-    type: 'bulk_inventory_update',
-    status: 'processing',
-    updates,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    totalUpdates: updates.length,
-    processedUpdates: 0,
-    errorCount: 0,
-  };
-  
-  bulkJobs.set(jobId, operation);
-  
-  // Simulate processing
-  setTimeout(() => {
-    operation.status = 'completed';
-    operation.processedUpdates = updates.length;
-    operation.updatedAt = new Date();
-    bulkJobs.set(jobId, operation);
-  }, 2000);
-  
-  res.status(202).json({
+
+  const bulkOps = updates.map(({ productId, quantity, action }) => {
+    const qty = Number(quantity) || 0;
+    let update;
+    if (action === 'increment') {
+      update = {
+        $inc: { currentStock: qty },
+        $set: { updatedAt: new Date() },
+      };
+    } else if (action === 'decrement') {
+      update = {
+        $inc: { currentStock: -Math.abs(qty) },
+        $set: { updatedAt: new Date() },
+      };
+    } else {
+      // default: set
+      update = {
+        $set: { currentStock: qty, availableStock: qty, updatedAt: new Date() },
+      };
+    }
+    return {
+      updateOne: {
+        filter: { product: productId },
+        update,
+        upsert: false,
+      },
+    };
+  });
+
+  const result = await Inventory.bulkWrite(bulkOps);
+
+  // Also sync Product.stock for backward compat
+  const stockBulk = updates.map(({ productId, quantity, action }) => {
+    const qty = Number(quantity) || 0;
+    let stockUpdate;
+    if (action === 'increment') {
+      stockUpdate = { $inc: { stock: qty } };
+    } else if (action === 'decrement') {
+      stockUpdate = { $inc: { stock: -Math.abs(qty) } };
+    } else {
+      stockUpdate = { $set: { stock: qty } };
+    }
+    return {
+      updateOne: {
+        filter: { _id: productId },
+        update: stockUpdate,
+      },
+    };
+  });
+
+  await Product.bulkWrite(stockBulk).catch(() => null); // best-effort
+
+  res.status(200).json({
     success: true,
-    message: 'Bulk inventory update initiated',
-    data: operation,
+    message: `${result.modifiedCount} inventory record(s) updated`,
+    data: jobResult('bulk_inventory_update', {
+      totalUpdates: updates.length,
+      processedUpdates: result.modifiedCount,
+      errorCount: updates.length - result.modifiedCount,
+    }),
   });
 });
 
-// BULK CATEGORY MANAGEMENT
+// POST /admin/bulk-operations/category
 exports.bulkAssignCategory = asyncHandler(async (req, res) => {
-  const { productIds, categoryId } = req.body;
-  
+  const { productIds, categoryId, subCategory } = req.body;
+
   if (!productIds || productIds.length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: 'Product IDs are required',
-    });
+    return res.status(400).json({ success: false, message: 'productIds are required' });
   }
-  
-  const jobId = `bulk_${Date.now()}`;
-  const operation = {
-    id: jobId,
-    type: 'bulk_category_assignment',
-    status: 'processing',
-    productIds,
-    categoryId,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    totalProducts: productIds.length,
-    processedProducts: 0,
-    errorCount: 0,
-  };
-  
-  bulkJobs.set(jobId, operation);
-  
-  res.status(202).json({
+  if (!categoryId) {
+    return res.status(400).json({ success: false, message: 'categoryId is required' });
+  }
+
+  const setFields = { category: categoryId };
+  if (subCategory) setFields.subCategory = subCategory;
+
+  const result = await Product.updateMany(
+    { _id: { $in: productIds } },
+    { $set: setFields },
+  );
+
+  res.status(200).json({
     success: true,
-    message: 'Bulk category assignment initiated',
-    data: operation,
+    message: `${result.modifiedCount} product(s) category updated`,
+    data: jobResult('bulk_category_assignment', {
+      productIds,
+      categoryId,
+      subCategory: subCategory || null,
+      totalProducts: productIds.length,
+      processedProducts: result.modifiedCount,
+      errorCount: productIds.length - result.modifiedCount,
+    }),
   });
 });
 
-// BULK PRICING UPDATE
+// POST /admin/bulk-operations/pricing
 exports.bulkUpdatePricing = asyncHandler(async (req, res) => {
-  const { productIds, priceAdjustment, adjustmentType } = req.body; // adjustmentType: 'fixed' or 'percentage'
-  
+  const { productIds, priceAdjustment, adjustmentType } = req.body;
+  // adjustmentType: 'fixed' = set price directly, 'percentage' = multiply current price
+
   if (!productIds || productIds.length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: 'Product IDs are required',
-    });
+    return res.status(400).json({ success: false, message: 'productIds are required' });
   }
-  
-  const jobId = `bulk_${Date.now()}`;
-  const operation = {
-    id: jobId,
-    type: 'bulk_pricing_update',
-    status: 'processing',
-    productIds,
-    priceAdjustment,
-    adjustmentType,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    totalProducts: productIds.length,
-    processedProducts: 0,
-    errorCount: 0,
-  };
-  
-  bulkJobs.set(jobId, operation);
-  
-  res.status(202).json({
+  if (priceAdjustment === undefined || priceAdjustment === null) {
+    return res.status(400).json({ success: false, message: 'priceAdjustment is required' });
+  }
+
+  let result;
+  if (adjustmentType === 'fixed') {
+    // Set all prices to the fixed amount
+    result = await Product.updateMany(
+      { _id: { $in: productIds } },
+      { $set: { price: Number(priceAdjustment) } },
+    );
+  } else if (adjustmentType === 'percentage') {
+    // Apply percentage multiplier (e.g., 10 = +10%, -10 = -10%)
+    const multiplier = 1 + Number(priceAdjustment) / 100;
+    result = await Product.updateMany(
+      { _id: { $in: productIds } },
+      [{ $set: { price: { $max: [0, { $multiply: ['$price', multiplier] }] } } }],
+    );
+  } else {
+    // Default: increment price by fixed amount
+    result = await Product.updateMany(
+      { _id: { $in: productIds } },
+      [{ $set: { price: { $max: [0, { $add: ['$price', Number(priceAdjustment)] }] } } }],
+    );
+  }
+
+  res.status(200).json({
     success: true,
-    message: 'Bulk pricing update initiated',
-    data: operation,
+    message: `${result.modifiedCount} product(s) price updated`,
+    data: jobResult('bulk_pricing_update', {
+      productIds,
+      priceAdjustment,
+      adjustmentType: adjustmentType || 'increment',
+      totalProducts: productIds.length,
+      processedProducts: result.modifiedCount,
+      errorCount: productIds.length - result.modifiedCount,
+    }),
   });
 });
 
+// POST /admin/bulk-operations/:jobId/cancel
 exports.cancelBulkOperation = asyncHandler(async (req, res) => {
-  const { jobId } = req.params;
-  const operation = bulkJobs.get(jobId);
-  
-  if (!operation) {
-    return res.status(404).json({
-      success: false,
-      message: 'Bulk operation not found',
-    });
-  }
-  
-  operation.status = 'cancelled';
-  operation.cancelledAt = new Date();
-  bulkJobs.set(jobId, operation);
-  
-  res.status(200).json({
-    success: true,
-    message: 'Bulk operation cancelled successfully',
-    data: operation,
+  res.status(404).json({
+    success: false,
+    message: 'Bulk operations are synchronous and cannot be cancelled after execution.',
   });
 });
 
+// GET /admin/bulk-operations/:jobId/logs
 exports.getBulkOperationLogs = asyncHandler(async (req, res) => {
-  const { jobId } = req.params;
-  const logs = Array.from(operationLogs.values()).filter(log => log.jobId === jobId);
-  
   res.status(200).json({
     success: true,
-    count: logs.length,
-    data: logs,
+    count: 0,
+    data: [],
+    message: 'Bulk operation logs are not persisted for synchronous operations.',
   });
 });
 
+// GET /admin/bulk-operations/stats/overview
 exports.getBulkOperationStats = asyncHandler(async (req, res) => {
-  const operations = Array.from(bulkJobs.values());
-  
-  const stats = {
-    total: operations.length,
-    completed: operations.filter(op => op.status === 'completed').length,
-    processing: operations.filter(op => op.status === 'processing').length,
-    scheduled: operations.filter(op => op.status === 'scheduled').length,
-    failed: operations.filter(op => op.status === 'failed').length,
-    cancelled: operations.filter(op => op.status === 'cancelled').length,
-  };
-  
+  const [totalProducts, publishedProducts, hiddenProducts, totalInventory] = await Promise.all([
+    Product.countDocuments(),
+    Product.countDocuments({ isPublished: true }),
+    Product.countDocuments({ isPublished: false }),
+    Inventory.countDocuments(),
+  ]);
+
   res.status(200).json({
     success: true,
-    data: stats,
+    data: {
+      total: 0,
+      completed: 0,
+      processing: 0,
+      scheduled: 0,
+      failed: 0,
+      cancelled: 0,
+      productStats: {
+        total: totalProducts,
+        published: publishedProducts,
+        hidden: hiddenProducts,
+        inventoryRecords: totalInventory,
+      },
+    },
   });
 });

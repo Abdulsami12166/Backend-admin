@@ -1,148 +1,160 @@
+const Order = require('../../models/Order');
 const asyncHandler = require('../../middleware/asyncHandler');
 
-// Mock data for order timelines
-const orderTimelines = new Map();
+/**
+ * Map an Order statusHistory entry to a timeline event shape expected by the admin web frontend.
+ */
+function toEvent(item, index) {
+  return {
+    id: `evt_${index}`,
+    timestamp: item.timestamp || new Date(),
+    event: item.status,
+    description: item.label || item.status,
+    actor: item.actor || 'system',
+    metadata: item.metadata || {},
+  };
+}
 
+// GET /admin/orders/:orderId/timeline
 exports.getOrderTimeline = asyncHandler(async (req, res) => {
   const { orderId } = req.params;
-  
-  const timeline = orderTimelines.get(orderId) || {
-    orderId,
-    events: [
-      {
-        id: 'evt_1',
-        timestamp: new Date(Date.now() - 86400000),
-        event: 'order_created',
-        description: 'Order created',
-        actor: 'customer',
-        metadata: {},
-      },
-      {
-        id: 'evt_2',
-        timestamp: new Date(Date.now() - 43200000),
-        event: 'payment_processed',
-        description: 'Payment processed successfully',
-        actor: 'system',
-        metadata: { paymentMethod: 'card', amount: 0 },
-      },
-      {
-        id: 'evt_3',
-        timestamp: new Date(Date.now() - 21600000),
-        event: 'order_confirmed',
-        description: 'Order confirmed',
-        actor: 'admin',
-        metadata: { confirmedBy: 'admin_user' },
-      },
-      {
-        id: 'evt_4',
-        timestamp: new Date(Date.now() - 3600000),
-        event: 'order_shipped',
-        description: 'Order shipped',
-        actor: 'admin',
-        metadata: { trackingId: 'TRACK123', carrier: 'DHL' },
-      },
-    ],
-  };
-  
+
+  const order = await Order.findById(orderId)
+    .select('statusHistory orderStatus createdAt')
+    .lean();
+
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Order not found' });
+  }
+
+  const events = (order.statusHistory || []).map(toEvent);
+
   res.status(200).json({
     success: true,
-    data: timeline,
+    data: {
+      orderId,
+      orderStatus: order.orderStatus,
+      events,
+    },
   });
 });
 
+// POST /admin/orders/:orderId/timeline/event
 exports.addTimelineEvent = asyncHandler(async (req, res) => {
   const { orderId } = req.params;
   const { event, description, actor, metadata } = req.body;
-  
-  let timeline = orderTimelines.get(orderId);
-  if (!timeline) {
-    timeline = { orderId, events: [] };
+
+  if (!event || !description) {
+    return res.status(400).json({ success: false, message: 'event and description are required' });
   }
-  
-  const newEvent = {
-    id: `evt_${Date.now()}`,
+
+  const order = await Order.findById(orderId);
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Order not found' });
+  }
+
+  const newEntry = {
+    status: event,
+    label: description,
     timestamp: new Date(),
-    event,
-    description,
-    actor,
-    metadata: metadata || {},
   };
-  
-  timeline.events.push(newEvent);
-  orderTimelines.set(orderId, timeline);
-  
+
+  order.statusHistory.push(newEntry);
+  await order.save();
+
+  const savedIndex = order.statusHistory.length - 1;
+  const savedEntry = order.statusHistory[savedIndex];
+
   res.status(201).json({
     success: true,
     message: 'Timeline event added successfully',
-    data: newEvent,
+    data: {
+      id: `evt_${savedIndex}`,
+      timestamp: savedEntry.timestamp,
+      event: savedEntry.status,
+      description: savedEntry.label,
+      actor: actor || 'admin',
+      metadata: metadata || {},
+    },
   });
 });
 
+// PATCH /admin/orders/:orderId/timeline/:eventId
 exports.updateTimelineEvent = asyncHandler(async (req, res) => {
   const { orderId, eventId } = req.params;
   const { description, metadata } = req.body;
-  
-  const timeline = orderTimelines.get(orderId);
-  if (!timeline) {
-    return res.status(404).json({
-      success: false,
-      message: 'Order not found',
-    });
+
+  const order = await Order.findById(orderId);
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Order not found' });
   }
-  
-  const event = timeline.events.find(e => e.id === eventId);
-  if (!event) {
-    return res.status(404).json({
-      success: false,
-      message: 'Event not found',
-    });
+
+  const index = parseInt(String(eventId).replace('evt_', ''), 10);
+  if (isNaN(index) || index < 0 || index >= order.statusHistory.length) {
+    return res.status(404).json({ success: false, message: 'Event not found' });
   }
-  
-  if (description) event.description = description;
-  if (metadata) event.metadata = { ...event.metadata, ...metadata };
-  
-  orderTimelines.set(orderId, timeline);
-  
+
+  if (description) order.statusHistory[index].label = description;
+  order.markModified('statusHistory');
+  await order.save();
+
+  const updated = order.statusHistory[index];
+
   res.status(200).json({
     success: true,
     message: 'Timeline event updated successfully',
-    data: event,
+    data: {
+      id: eventId,
+      timestamp: updated.timestamp,
+      event: updated.status,
+      description: updated.label,
+      actor: 'admin',
+      metadata: metadata || {},
+    },
   });
 });
 
+// GET /admin/timeline/stats
 exports.getTimelineStats = asyncHandler(async (req, res) => {
-  const allTimelines = Array.from(orderTimelines.values());
-  
-  const stats = {
-    totalOrders: allTimelines.length,
-    totalEvents: allTimelines.reduce((sum, tl) => sum + tl.events.length, 0),
-    eventsByType: {},
-  };
-  
-  allTimelines.forEach(timeline => {
-    timeline.events.forEach(event => {
-      stats.eventsByType[event.event] = (stats.eventsByType[event.event] || 0) + 1;
-    });
-  });
-  
+  const [totalOrders, withHistory, eventAgg] = await Promise.all([
+    Order.countDocuments(),
+    Order.countDocuments({ 'statusHistory.0': { $exists: true } }),
+    Order.aggregate([
+      { $unwind: { path: '$statusHistory', preserveNullAndEmptyArrays: false } },
+      { $group: { _id: '$statusHistory.status', count: { $sum: 1 } } },
+    ]),
+  ]);
+
+  const eventsByType = eventAgg.reduce((acc, item) => {
+    acc[item._id] = item.count;
+    return acc;
+  }, {});
+
+  const totalEvents = eventAgg.reduce((sum, item) => sum + item.count, 0);
+
   res.status(200).json({
     success: true,
-    data: stats,
+    data: {
+      totalOrders,
+      ordersWithTimeline: withHistory,
+      totalEvents,
+      eventsByType,
+    },
   });
 });
 
+// GET /admin/orders/:orderId/timeline/lifecycle
 exports.getOrderLifecycleHistory = asyncHandler(async (req, res) => {
   const { orderId } = req.params;
-  
-  const timeline = orderTimelines.get(orderId);
-  if (!timeline) {
-    return res.status(404).json({
-      success: false,
-      message: 'Order not found',
-    });
+
+  const order = await Order.findById(orderId)
+    .select('statusHistory orderStatus')
+    .lean();
+
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Order not found' });
   }
-  
-  // Group events by lifecycle stage
+
   const lifecycleStages = {
     creation: [],
     payment: [],
@@ -151,22 +163,25 @@ exports.getOrderLifecycleHistory = asyncHandler(async (req, res) => {
     delivery: [],
     completion: [],
   };
-  
-  timeline.events.forEach(event => {
-    if (event.event.includes('created')) lifecycleStages.creation.push(event);
-    else if (event.event.includes('payment')) lifecycleStages.payment.push(event);
-    else if (event.event.includes('confirmed') || event.event.includes('processing')) lifecycleStages.processing.push(event);
-    else if (event.event.includes('shipped') || event.event.includes('shipping')) lifecycleStages.shipping.push(event);
-    else if (event.event.includes('delivered')) lifecycleStages.delivery.push(event);
-    else lifecycleStages.completion.push(event);
+
+  (order.statusHistory || []).forEach((item, index) => {
+    const ev = toEvent(item, index);
+    const s = item.status;
+    if (s === 'pending' || s.includes('creat')) lifecycleStages.creation.push(ev);
+    else if (s === 'paid' || s.includes('payment')) lifecycleStages.payment.push(ev);
+    else if (['processing', 'order-confirmed', 'packed'].includes(s)) lifecycleStages.processing.push(ev);
+    else if (['shipping', 'shipped', 'near-delivery'].includes(s)) lifecycleStages.shipping.push(ev);
+    else if (['out-for-delivery', 'delivered'].includes(s)) lifecycleStages.delivery.push(ev);
+    else lifecycleStages.completion.push(ev);
   });
-  
+
   res.status(200).json({
     success: true,
     data: {
       orderId,
+      orderStatus: order.orderStatus,
       lifecycleStages: Object.fromEntries(
-        Object.entries(lifecycleStages).filter(([, events]) => events.length > 0)
+        Object.entries(lifecycleStages).filter(([, events]) => events.length > 0),
       ),
     },
   });
