@@ -1,11 +1,37 @@
 const Shipment = require('../../models/Shipment');
 const Order = require('../../models/Order');
+const User = require('../../models/User');
 const {
   sendSuccess,
   sendError,
   sendServerError,
 } = require('../../utils/feedback');
 const { auditAction, auditError } = require('../../utils/workflow');
+const { emitToAdmins, emitToUser, socketEvents } = require('../../utils/eventBus');
+const { sendOrderStatusNotification } = require('../../services/pushNotificationService');
+
+const ORDER_STATUS_LABELS = {
+  'order-confirmed': 'Order Confirmed',
+  packed: 'Packed',
+  shipped: 'Shipped',
+  'near-delivery': 'Near Delivery',
+  'out-for-delivery': 'Out For Delivery',
+  delivered: 'Delivered',
+  cancelled: 'Cancelled',
+  failed: 'Delivery Failed',
+  returned: 'Returned',
+};
+
+// Map shipment.status → orderStatus
+const SHIPMENT_TO_ORDER_STATUS = {
+  packed: 'packed',
+  in_transit: 'shipped',
+  near_delivery: 'near-delivery',
+  out_for_delivery: 'out-for-delivery',
+  delivered: 'delivered',
+  failed: 'failed',
+  returned: 'returned',
+};
 
 /**
  * Get all shipments
@@ -36,7 +62,7 @@ exports.getAllShipments = async (req, res) => {
 
     const total = await Shipment.countDocuments(query);
     const shipments = await Shipment.find(query)
-      .populate('order', 'razorpayOrderId totalAmount')
+      .populate('order', 'razorpayOrderId totalAmount orderStatus user')
       .sort(sortBy)
       .skip(skip)
       .limit(parseInt(limit));
@@ -120,9 +146,42 @@ exports.createShipment = async (req, res) => {
 
     await shipment.save();
 
-    // Update order status
+    // Update order status and status history
     order.orderStatus = 'shipped';
+    order.statusHistory = [
+      ...(Array.isArray(order.statusHistory) ? order.statusHistory : []).filter(
+        item => item.status !== 'shipped',
+      ),
+      { status: 'shipped', label: 'Shipped', timestamp: new Date() },
+    ];
     await order.save();
+
+    const payload = {
+      orderId: String(order._id),
+      userId: String(order.user),
+      orderStatus: order.orderStatus,
+      paymentStatus: order.paymentStatus,
+      statusHistory: order.statusHistory || [],
+      updatedAt: order.updatedAt,
+    };
+
+    // Emit real-time socket events
+    try {
+      emitToAdmins(req.app, socketEvents.LEGACY.ORDER_STATUS_CHANGED, payload);
+      emitToAdmins(req.app, socketEvents.DOMAIN.ORDER_UPDATED, payload);
+      emitToUser(req.app, order.user, socketEvents.DOMAIN.ORDER_UPDATED, payload);
+      emitToAdmins(req.app, socketEvents.DOMAIN.SHIPMENT_CREATED, { shipment: shipment.toObject() });
+    } catch (socketErr) {
+      console.error('[Socket] createShipment emission failed:', socketErr.message);
+    }
+
+    // Send push notification to user
+    try {
+      const user = await User.findById(order.user).select('fcmToken');
+      await sendOrderStatusNotification(user, 'shipped', order._id);
+    } catch (pushErr) {
+      console.error('[Push] createShipment notification failed:', pushErr.message);
+    }
 
     await auditAction(req, 'create_shipment', 'shipment', shipment._id, null, shipment.toObject(), {
       resourcePath: `/api/admin/shipments/${orderId}`,
@@ -161,8 +220,52 @@ exports.updateTrackingStatus = async (req, res) => {
 
     if (status === 'delivered') {
       shipment.actualDeliveryDate = new Date();
-      // Update order status
-      await Order.findByIdAndUpdate(shipment.order, { orderStatus: 'delivered' });
+    }
+
+    const orderStatus = SHIPMENT_TO_ORDER_STATUS[status] || null;
+
+    if (orderStatus) {
+      const order = await Order.findById(shipment.order);
+      if (order) {
+        order.orderStatus = orderStatus;
+        order.statusHistory = [
+          ...(Array.isArray(order.statusHistory) ? order.statusHistory : []).filter(
+            item => item.status !== orderStatus,
+          ),
+          {
+            status: orderStatus,
+            label: ORDER_STATUS_LABELS[orderStatus] || orderStatus,
+            timestamp: new Date(),
+          },
+        ];
+        await order.save();
+
+        const payload = {
+          orderId: String(order._id),
+          userId: String(order.user),
+          orderStatus: order.orderStatus,
+          paymentStatus: order.paymentStatus,
+          statusHistory: order.statusHistory || [],
+          updatedAt: order.updatedAt,
+        };
+
+        // Emit real-time socket events
+        try {
+          emitToAdmins(req.app, socketEvents.LEGACY.ORDER_STATUS_CHANGED, payload);
+          emitToAdmins(req.app, socketEvents.DOMAIN.ORDER_UPDATED, payload);
+          emitToUser(req.app, order.user, socketEvents.DOMAIN.ORDER_UPDATED, payload);
+        } catch (socketErr) {
+          console.error('[Socket] updateTrackingStatus order emission failed:', socketErr.message);
+        }
+
+        // Send push notification to user
+        try {
+          const user = await User.findById(order.user).select('fcmToken');
+          await sendOrderStatusNotification(user, orderStatus, order._id);
+        } catch (pushErr) {
+          console.error('[Push] updateTrackingStatus notification failed:', pushErr.message);
+        }
+      }
     }
 
     await shipment.save();
@@ -170,6 +273,16 @@ exports.updateTrackingStatus = async (req, res) => {
     await auditAction(req, 'update_tracking', 'shipment', shipment._id, null, { status, location }, {
       resourcePath: `/api/admin/shipments/${shipmentId}/tracking`,
     });
+
+    // Emit SHIPMENT_UPDATED so admin Shipments panel refreshes in real-time
+    try {
+      emitToAdmins(req.app, socketEvents.DOMAIN.SHIPMENT_UPDATED, {
+        shipmentId,
+        status,
+        location,
+        orderStatus: SHIPMENT_TO_ORDER_STATUS[status] || null,
+      });
+    } catch (_) { /* non-fatal */ }
 
     return sendSuccess(res, 200, 'Tracking updated successfully', { shipment });
   } catch (error) {
@@ -210,7 +323,7 @@ exports.getShipmentsByStatus = async (req, res) => {
     const { limit = 50 } = req.query;
 
     const shipments = await Shipment.find({ status })
-      .populate('order', 'razorpayOrderId totalAmount')
+      .populate('order', 'razorpayOrderId totalAmount orderStatus')
       .limit(parseInt(limit))
       .sort('-createdAt');
 
@@ -257,8 +370,15 @@ exports.getShipmentStats = async (req, res) => {
       }
     ]);
 
+    const byStatus = stats.reduce((acc, s) => ({ ...acc, [s._id]: s.count }), {});
     return sendSuccess(res, 200, 'Shipment statistics fetched successfully', {
-      byStatus: stats.reduce((acc, s) => ({ ...acc, [s._id]: s.count }), {}),
+      byStatus,
+      pending: byStatus.pending || 0,
+      inTransit: byStatus.in_transit || 0,
+      outForDelivery: byStatus.out_for_delivery || 0,
+      delivered: byStatus.delivered || 0,
+      failed: byStatus.failed || 0,
+      returned: byStatus.returned || 0,
       total,
       avgDeliveryTime: avgDeliveryTime[0]?.avgDays || 0,
     });
