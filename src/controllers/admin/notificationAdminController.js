@@ -597,3 +597,98 @@ exports.deleteMarketingRule = asyncHandler(async (req, res) => {
     message: 'Marketing rule deleted successfully',
   });
 });
+
+exports.sendDirectNotification = asyncHandler(async (req, res) => {
+  const { userId, role, channel, title, body } = req.body;
+
+  if (!channel || !body) {
+    return res.status(400).json({ success: false, message: 'channel and body are required' });
+  }
+
+  const User = require('../../models/User');
+  const { sendPushNotification } = require('../../services/pushNotificationService');
+
+  let targets = [];
+  if (userId) {
+    const user = await User.findById(userId);
+    if (user) targets.push(user);
+  } else if (role) {
+    targets = await User.find({ role });
+  } else {
+    targets = await User.find({});
+  }
+
+  if (targets.length === 0) {
+    return res.status(400).json({ success: false, message: 'No target users found' });
+  }
+
+  let successCount = 0;
+  for (const user of targets) {
+    if (channel === 'push') {
+      if (user.fcmToken) {
+        await sendPushNotification(user.fcmToken, title || 'System Alert', body, {}, user._id);
+        successCount++;
+      } else {
+        // Fallback log
+        const NotificationLog = require('../../models/NotificationLog');
+        const log = new NotificationLog({
+          user: user._id,
+          channel: 'push',
+          subject: title || 'System Alert',
+          content: body,
+          recipient: {
+            userId: user._id,
+            email: user.email,
+            phone: user.phone
+          },
+          status: 'failed',
+          failureReason: 'User has no registered FCM token',
+          sentAt: new Date()
+        });
+        await log.save();
+
+        const { emitToAdmins, socketEvents } = require('../../utils/eventBus');
+        emitToAdmins(null, socketEvents.DOMAIN.NOTIFICATION_SENT, {
+          id: String(log._id),
+          channel: 'push',
+          status: 'failed',
+          recipient: { userId: user._id },
+          createdAt: log.createdAt,
+        });
+      }
+    } else {
+      const NotificationLog = require('../../models/NotificationLog');
+      const log = new NotificationLog({
+        user: user._id,
+        channel,
+        subject: title || 'System Alert',
+        content: body,
+        recipient: {
+          userId: user._id,
+          email: user.email,
+          phone: user.phone
+        },
+        status: 'sent',
+        sentAt: new Date()
+      });
+      await log.save();
+
+      const { emitToAdmins, socketEvents } = require('../../utils/eventBus');
+      emitToAdmins(null, socketEvents.DOMAIN.NOTIFICATION_SENT, {
+        id: String(log._id),
+        channel,
+        status: 'sent',
+        recipient: { userId: user._id },
+        createdAt: log.createdAt,
+      });
+
+      successCount++;
+    }
+  }
+
+  res.status(200).json({
+    success: true,
+    message: `Notification sent to ${successCount} users.`,
+    sentCount: successCount
+  });
+});

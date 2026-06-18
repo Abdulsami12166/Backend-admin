@@ -130,6 +130,7 @@ router.delete('/notifications/event-mappings/:mappingId', authorizeAdmin, author
 router.get('/notifications/logs', authorizeAdmin, authorizePermission('notifications:view'), notificationController.getAllNotificationLogs);
 router.get('/notifications/logs/:logId', authorizeAdmin, authorizePermission('notifications:view'), notificationController.getNotificationLogDetails);
 router.post('/notifications/logs', authorizeAdmin, authorizePermission('notifications:manage'), notificationController.createNotificationLog);
+router.post('/notifications/send', authorizeAdmin, authorizePermission('notifications:manage'), notificationController.sendDirectNotification);
 router.get('/notifications/stats', authorizeAdmin, authorizePermission('analytics:view'), notificationController.getNotificationStats);
 
 router.get('/notifications/marketing-rules', authorizeAdmin, authorizePermission('marketing:view'), notificationController.getAllMarketingRules);

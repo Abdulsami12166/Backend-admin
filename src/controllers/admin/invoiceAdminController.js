@@ -137,6 +137,14 @@ exports.createInvoice = async (req, res) => {
       ipAddress: req.ip
     });
 
+    try {
+      const { emitToAdmins, emitToUser } = require('../../utils/eventBus');
+      emitToAdmins(req.app, 'invoice.created', { invoiceNumber: invoice.invoiceNumber, totalAmount: invoice.total, userId: invoice.user, invoiceId: invoice._id });
+      emitToUser(req.app, invoice.user, 'invoice.created', { invoiceNumber: invoice.invoiceNumber, totalAmount: invoice.total, userId: invoice.user, invoiceId: invoice._id });
+    } catch (err) {
+      console.error('Failed to emit invoice creation event:', err.message);
+    }
+
     res.status(201).json({ 
       success: true, 
       data: invoice,
@@ -167,6 +175,13 @@ exports.sendInvoice = async (req, res) => {
     invoice.status = 'sent';
     invoice.sentAt = new Date();
     await invoice.save();
+
+    try {
+      const { emitToUser } = require('../../utils/eventBus');
+      emitToUser(req.app, invoice.user, 'invoice.updated', { invoiceNumber: invoice.invoiceNumber, status: invoice.status, totalAmount: invoice.total, userId: invoice.user, invoiceId: invoice._id });
+    } catch (err) {
+      console.error('Failed to emit invoice send event:', err.message);
+    }
 
     res.json({ success: true, data: invoice, message: 'Invoice sent to customer' });
   } catch (error) {
@@ -215,6 +230,14 @@ exports.recordPayment = async (req, res) => {
       changes: { after: { amountPaid: invoice.amountPaid, status: invoice.status } },
       ipAddress: req.ip
     });
+
+    try {
+      const { emitToAdmins, emitToUser } = require('../../utils/eventBus');
+      emitToAdmins(req.app, 'invoice.updated', { invoiceNumber: invoice.invoiceNumber, status: invoice.status, totalAmount: invoice.total, userId: invoice.user, invoiceId: invoice._id });
+      emitToUser(req.app, invoice.user, 'invoice.updated', { invoiceNumber: invoice.invoiceNumber, status: invoice.status, totalAmount: invoice.total, userId: invoice.user, invoiceId: invoice._id });
+    } catch (err) {
+      console.error('Failed to emit invoice payment event:', err.message);
+    }
 
     res.json({ success: true, data: invoice, message: 'Payment recorded' });
   } catch (error) {

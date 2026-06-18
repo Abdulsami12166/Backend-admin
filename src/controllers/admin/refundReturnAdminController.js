@@ -28,6 +28,8 @@ exports.getAllReturns = async (req, res) => {
     const returns = await Return.find(query)
       .populate('order', 'razorpayOrderId totalAmount')
       .populate('user', 'name email phone')
+      // ponytail: populate product details for rendering return items in admin web
+      .populate('returnItems.product', 'title name price images')
       .sort(sortBy)
       .skip(skip)
       .limit(parseInt(limit));
@@ -56,7 +58,9 @@ exports.getReturnDetails = async (req, res) => {
     const returnData = await Return.findById(returnId)
       .populate('order', 'razorpayOrderId totalAmount items')
       .populate('user', 'name email phone address')
-      .populate('timeline.updatedBy', 'name');
+      .populate('timeline.updatedBy', 'name')
+      // ponytail: populate product details for rendering return items in admin web
+      .populate('returnItems.product', 'title name price images');
 
     if (!returnData) {
       return sendError(res, 404, 'Return not found');
@@ -190,6 +194,7 @@ exports.getAllRefunds = async (req, res) => {
     const refunds = await Refund.find(query)
       .populate('order', 'razorpayOrderId totalAmount')
       .populate('user', 'name email')
+      .populate('items', 'title name price images')
       .sort(sortBy)
       .skip(skip)
       .limit(parseInt(limit));
@@ -219,6 +224,7 @@ exports.getRefundDetails = async (req, res) => {
       .populate('order')
       .populate('return')
       .populate('user', 'name email phone')
+      .populate('items', 'title name price images')
       .populate('timeline.updatedBy', 'name');
 
     if (!refund) {
