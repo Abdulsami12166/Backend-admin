@@ -92,6 +92,23 @@ const adminUpdateOrderStatus = async (req, res, next) => {
     if (req.body.paymentStatus) order.paymentStatus = req.body.paymentStatus;
 
     await order.save();
+
+    // Auto-update/generate invoice
+    try {
+      const { generateInvoiceForOrder, handleInvoicePayment } = require('../../services/invoiceService');
+      await generateInvoiceForOrder(order._id);
+      if (order.paymentStatus === 'paid') {
+        await handleInvoicePayment(order._id, {
+          amount: order.totalAmount,
+          method: order.paymentMethod || 'cash',
+          reference: order.paymentReference || '',
+          notes: 'Status update by admin'
+        });
+      }
+    } catch (invErr) {
+      console.error('[Invoice] Update failed on order status change:', invErr.message);
+    }
+
     logger.info('Admin updated order status', { orderId: order._id });
 
     await UserActivity.create({
@@ -158,6 +175,14 @@ const adminDeleteOrder = async (req, res, next) => {
 const adminCreateOrder = async (req, res, next) => {
   try {
     const order = await Order.create(req.body);
+
+    // Auto-generate invoice
+    try {
+      const { generateInvoiceForOrder } = require('../../services/invoiceService');
+      await generateInvoiceForOrder(order._id);
+    } catch (invErr) {
+      console.error('[Invoice] Auto-generation failed on admin order creation:', invErr.message);
+    }
     
     await UserActivity.create({
       user: order.user,

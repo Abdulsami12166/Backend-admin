@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const notificationLogSchema = new mongoose.Schema(
   {
-    template: { type: mongoose.Schema.Types.ObjectId, ref: 'NotificationTemplate', required: true },
+    template: { type: mongoose.Schema.Types.ObjectId, ref: 'NotificationTemplate', required: false },
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     order: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', sparse: true },
     recipient: {

@@ -9,7 +9,10 @@ exports.getAllFeatureToggles = async (req, res) => {
     const { category, isEnabled, visibility, sortBy = '-createdAt' } = req.query;
 
     let query = {};
-    if (category) query.category = category;
+    if (category) {
+      const mappedCategory = category.toLowerCase() === 'products' ? 'product' : category;
+      query.category = { $regex: new RegExp(`^${mappedCategory}$`, 'i') };
+    }
     if (isEnabled !== undefined) query.isEnabled = isEnabled === 'true';
     if (visibility) query.visibility = visibility;
 

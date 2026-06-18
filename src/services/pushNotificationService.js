@@ -46,33 +46,81 @@ const initFirebase = () => {
 /**
  * Send a push notification to a single FCM token.
  */
-const sendPushNotification = async (fcmToken, title, body, data = {}) => {
+const sendPushNotification = async (fcmToken, title, body, data = {}, userId = null, orderId = null) => {
   if (!fcmToken) return;
 
   const firebaseAdmin = initFirebase();
-  if (!firebaseAdmin) return;
+  let status = 'sent';
+  let failureReason = '';
+
+  if (!firebaseAdmin) {
+    status = 'failed';
+    failureReason = 'Firebase Admin not initialized (missing credentials)';
+  }
 
   try {
-    const stringData = Object.fromEntries(
-      Object.entries(data).map(([k, v]) => [k, String(v)]),
-    );
+    if (firebaseAdmin) {
+      const stringData = Object.fromEntries(
+        Object.entries(data).map(([k, v]) => [k, String(v)]),
+      );
 
-    await firebaseAdmin.messaging().send({
-      token: fcmToken,
-      notification: { title, body },
-      data: stringData,
-      android: {
-        priority: 'high',
-        notification: { sound: 'default', channelId: 'orders' },
-      },
-      apns: {
-        payload: { aps: { sound: 'default' } },
-      },
-    });
+      await firebaseAdmin.messaging().send({
+        token: fcmToken,
+        notification: { title, body },
+        data: stringData,
+        android: {
+          priority: 'high',
+          notification: { sound: 'default', channelId: 'orders' },
+        },
+        apns: {
+          payload: { aps: { sound: 'default' } },
+        },
+      });
 
-    console.log('[PushNotification] Sent to token:', fcmToken.slice(0, 20) + '...');
+      console.log('[PushNotification] Sent to token:', fcmToken.slice(0, 20) + '...');
+    }
   } catch (err) {
+    status = 'failed';
+    failureReason = err.message;
     console.error('[PushNotification] Failed to send notification:', err.message);
+  }
+
+  // Log in database if userId is provided
+  if (userId) {
+    try {
+      const NotificationLog = require('../models/NotificationLog');
+      const log = new NotificationLog({
+        user: userId,
+        order: orderId,
+        channel: 'push',
+        subject: title,
+        content: body,
+        recipient: {
+          userId,
+        },
+        status,
+        failureReason,
+        sentAt: status === 'sent' ? new Date() : undefined,
+        metadata: { data }
+      });
+      await log.save();
+
+      // Emit real-time socket notification update
+      try {
+        const { emitToAdmins, socketEvents } = require('../utils/eventBus');
+        emitToAdmins(null, socketEvents.DOMAIN.NOTIFICATION_SENT, {
+          id: String(log._id),
+          channel: 'push',
+          status,
+          recipient: { userId },
+          createdAt: log.createdAt,
+        });
+      } catch (socketErr) {
+        console.error('[PushNotification] Socket emission failed:', socketErr.message);
+      }
+    } catch (dbErr) {
+      console.error('[PushNotification] Database log saving failed:', dbErr.message);
+    }
   }
 };
 
@@ -99,11 +147,18 @@ const sendOrderStatusNotification = async (user, orderStatus, orderId) => {
     body: `Your order status has been updated to: ${orderStatus.replace(/-/g, ' ')}.`,
   };
 
-  await sendPushNotification(user.fcmToken, msg.title, msg.body, {
-    screen: 'TrackOrder',
-    orderId: String(orderId),
-    orderStatus,
-  });
+  await sendPushNotification(
+    user.fcmToken,
+    msg.title,
+    msg.body,
+    {
+      screen: 'TrackOrder',
+      orderId: String(orderId),
+      orderStatus,
+    },
+    user._id,
+    orderId
+  );
 };
 
 module.exports = { sendPushNotification, sendOrderStatusNotification };

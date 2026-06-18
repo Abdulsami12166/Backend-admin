@@ -19,6 +19,7 @@ const socketEvents = {
     TICKET_MESSAGE_ADDED: 'ticket.message.added',
     SHIPMENT_CREATED: 'shipment.created',
     SHIPMENT_UPDATED: 'shipment.updated',
+    NOTIFICATION_SENT: 'notification.sent',
   },
   LEGACY: {
     NEW_ORDER: 'new-order',

@@ -49,6 +49,8 @@ const resolveSocketUser = async socket => {
   }
 };
 
+let ioInstance = null;
+
 const attachSocketServer = (httpServer, app) => {
   const io = new Server(httpServer, {
     cors: corsOptions,
@@ -103,10 +105,11 @@ const attachSocketServer = (httpServer, app) => {
   });
 
   app.set('io', io);
+  ioInstance = io;
   return io;
 };
 
-const getIo = app => app.get('io');
+const getIo = app => app ? app.get('io') : ioInstance;
 
 const emitToAdmins = (app, event, payload) => {
   const io = getIo(app);
@@ -132,4 +135,5 @@ module.exports = {
   emitToUser,
   emitToAll,
   socketEvents,
+  getIo: () => ioInstance
 };

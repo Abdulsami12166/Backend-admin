@@ -1,5 +1,5 @@
-const Return = require('../../models/Return');
-const Refund = require('../../models/Refund');
+const Return = require('../../models/ReturnRequest');
+const Refund = require('../../models/RefundRequest');
 const RefundLedger = require('../../models/RefundLedger');
 const Order = require('../../models/Order');
 const {
@@ -262,6 +262,14 @@ exports.approveRefund = async (req, res) => {
     });
 
     await refund.save();
+
+    // Auto-issue credit note on invoice
+    try {
+      const { handleInvoiceRefund } = require('../../services/invoiceService');
+      await handleInvoiceRefund(refund.order, refund.refundAmount || refund.actualRefundAmount || 0, refund.reason || 'Customer refund approved');
+    } catch (invErr) {
+      console.error('[Invoice] Credit note creation failed on refund approval:', invErr.message);
+    }
 
     emitToAdmins(req.app, socketEvents.DOMAIN.REFUND_UPDATED, {
       refundId: String(refund._id),
