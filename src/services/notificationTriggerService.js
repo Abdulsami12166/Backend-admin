@@ -335,29 +335,47 @@ const triggerEventNotifications = async (event, data = {}) => {
             await log.save();
 
             // Perform actual channel dispatch
-            if (channel === 'push' && user.fcmToken) {
-              const pushData = { event, type: event };
-              if (data.orderId) pushData.orderId = String(data.orderId);
-              if (data.ticketId) pushData.ticketId = String(data.ticketId);
-              if (data._id) pushData.id = String(data._id);
-              if (data.refundId) pushData.refundId = String(data.refundId);
-              if (data.returnId) pushData.returnId = String(data.returnId);
-              if (data.replacementId) pushData.replacementId = String(data.replacementId);
-              if (data.productId) pushData.productId = String(data.productId);
-              
-              if (event.includes('order')) {
-                pushData.screen = 'TrackOrder';
-              } else if (event.includes('ticket')) {
-                pushData.screen = 'TicketDetail';
-              } else if (event.includes('refund')) {
-                pushData.screen = 'RefundTracking';
-              } else if (event.includes('return')) {
-                pushData.screen = 'ReturnTracking';
-              } else if (event.includes('replacement')) {
-                pushData.screen = 'ReplacementTracking';
-              }
+            if (channel === 'push') {
+              if (user.fcmToken) {
+                const pushData = { event, type: event };
+                if (data.orderId) pushData.orderId = String(data.orderId);
+                if (data.ticketId) pushData.ticketId = String(data.ticketId);
+                if (data._id) pushData.id = String(data._id);
+                if (data.refundId) pushData.refundId = String(data.refundId);
+                if (data.returnId) pushData.returnId = String(data.returnId);
+                if (data.replacementId) pushData.replacementId = String(data.replacementId);
+                if (data.productId) pushData.productId = String(data.productId);
+                
+                if (event.includes('order')) {
+                  pushData.screen = 'TrackOrder';
+                } else if (event.includes('ticket')) {
+                  pushData.screen = 'TicketDetail';
+                } else if (event.includes('refund')) {
+                  pushData.screen = 'RefundTracking';
+                } else if (event.includes('return')) {
+                  pushData.screen = 'ReturnTracking';
+                } else if (event.includes('replacement')) {
+                  pushData.screen = 'ReplacementTracking';
+                }
 
-              await sendPushNotification(user.fcmToken, title, body, pushData, user._id, data.orderId || data.order?._id);
+                await sendPushNotification(user.fcmToken, title, body, pushData, user._id, data.orderId || data.order?._id);
+              } else {
+                // Fallback to inApp if push device token is missing
+                try {
+                  log.channel = 'inApp';
+                  await log.save();
+
+                  const { emitToUser } = require('../utils/eventBus');
+                  emitToUser(null, user._id, 'notification.inapp', {
+                    id: String(log._id),
+                    title,
+                    message: body,
+                    createdAt: log.createdAt
+                  });
+                } catch (fallbackErr) {
+                  console.error('[NotificationTrigger] Fallback to inApp failed:', fallbackErr.message);
+                }
+              }
             }
 
             // Emit to admin dashboards in real time so logs reload
