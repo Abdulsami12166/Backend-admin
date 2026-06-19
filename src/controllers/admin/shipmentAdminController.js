@@ -308,6 +308,7 @@ exports.getTrackingHistory = async (req, res) => {
       trackingNumber: shipment.trackingNumber,
       currentStatus: shipment.status,
       events: shipment.trackingEvents.sort((a, b) => b.timestamp - a.timestamp),
+      trackingEvents: shipment.trackingEvents.sort((a, b) => b.timestamp - a.timestamp),
     });
   } catch (error) {
     return sendServerError(res, error.message, error.stack);

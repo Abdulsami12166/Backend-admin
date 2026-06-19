@@ -126,8 +126,19 @@ const emitToAdmins = (app, event, payload) => {
 
 const emitToUser = (app, userId, event, payload) => {
   const io = getIo(app);
-  if (!io || !userId) return;
-  io.to(socketEvents.ROOMS.user(String(userId))).emit(event, payload);
+  if (io && userId) {
+    io.to(socketEvents.ROOMS.user(String(userId))).emit(event, payload);
+  }
+
+  // Forward to main backend internal socket bridge
+  const MAIN_BACKEND_URL = process.env.MAIN_BACKEND_URL || (process.env.NODE_ENV === 'production' ? 'https://ecommerce-app-backend-1kn0.onrender.com' : 'http://localhost:5001');
+  if (userId) {
+    fetch(`${MAIN_BACKEND_URL}/api/v1/internal/emit-socket`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, event, payload })
+    }).catch(err => console.error(`[EventBus] Failed to forward emitToUser to main backend:`, err.message));
+  }
 
   try {
     const { triggerEventNotifications } = require('../services/notificationTriggerService');
@@ -142,6 +153,15 @@ const emitToAll = (app, event, payload) => {
   if (io) {
     io.emit(event, payload);
   }
+
+  // Forward to main backend internal socket bridge
+  const MAIN_BACKEND_URL = process.env.MAIN_BACKEND_URL || (process.env.NODE_ENV === 'production' ? 'https://ecommerce-app-backend-1kn0.onrender.com' : 'http://localhost:5001');
+  fetch(`${MAIN_BACKEND_URL}/api/v1/internal/emit-socket`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event, payload })
+  }).catch(err => console.error(`[EventBus] Failed to forward emitToAll to main backend:`, err.message));
+
   try {
     const { triggerEventNotifications } = require('../services/notificationTriggerService');
     triggerEventNotifications(event, payload).catch(err => console.error(err));
