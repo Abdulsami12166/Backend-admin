@@ -85,7 +85,48 @@ const sendPushNotification = async (fcmToken, title, body, data = {}, userId = n
     console.error('[PushNotification] Failed to send notification:', err.message);
   }
 
-  // Log in database if userId is provided
+  // Fallback to inApp if push failed and a userId is provided
+  if (status === 'failed' && userId) {
+    try {
+      console.log(`[PushNotification] Falling back to inApp for user ${userId} due to push failure: ${failureReason}`);
+      
+      const NotificationLog = require('../models/NotificationLog');
+      const log = new NotificationLog({
+        user: userId,
+        order: orderId,
+        channel: 'inApp',
+        subject: title,
+        content: body,
+        recipient: { userId },
+        status: 'sent',
+        sentAt: new Date(),
+        metadata: { data, fallbackFromPush: true, pushFailureReason: failureReason }
+      });
+      await log.save();
+
+      const { emitToAdmins, socketEvents, emitToUser } = require('../utils/eventBus');
+      emitToAdmins(null, socketEvents.DOMAIN.NOTIFICATION_SENT, {
+        id: String(log._id),
+        channel: 'inApp',
+        status: 'sent',
+        recipient: { userId },
+        createdAt: log.createdAt,
+      });
+
+      emitToUser(null, userId, 'notification.inapp', {
+        id: String(log._id),
+        title: title || 'System Alert',
+        message: body,
+        createdAt: log.createdAt
+      });
+
+      return; // Fallback handled successfully
+    } catch (fallbackErr) {
+      console.error('[PushNotification] Fallback to inApp failed:', fallbackErr.message);
+    }
+  }
+
+  // Log in database if userId is provided and push succeeded
   if (userId) {
     try {
       const NotificationLog = require('../models/NotificationLog');
