@@ -630,11 +630,11 @@ exports.sendDirectNotification = asyncHandler(async (req, res) => {
         await sendPushNotification(user.fcmToken, title || 'System Alert', body, { screen: 'Notifications', event: 'admin.broadcast' }, user._id);
         successCount++;
       } else {
-        // Fallback log
+        // Fallback to inApp notification so the notification is successfully sent and received
         const NotificationLog = require('../../models/NotificationLog');
         const log = new NotificationLog({
           user: user._id,
-          channel: 'push',
+          channel: 'inApp',
           subject: title || 'System Alert',
           content: body,
           recipient: {
@@ -642,20 +642,28 @@ exports.sendDirectNotification = asyncHandler(async (req, res) => {
             email: user.email,
             phone: user.phone
           },
-          status: 'failed',
-          failureReason: 'User has no registered FCM token',
+          status: 'sent',
           sentAt: new Date()
         });
         await log.save();
 
-        const { emitToAdmins, socketEvents } = require('../../utils/eventBus');
+        const { emitToAdmins, socketEvents, emitToUser } = require('../../utils/eventBus');
         emitToAdmins(null, socketEvents.DOMAIN.NOTIFICATION_SENT, {
           id: String(log._id),
-          channel: 'push',
-          status: 'failed',
+          channel: 'inApp',
+          status: 'sent',
           recipient: { userId: user._id },
           createdAt: log.createdAt,
         });
+
+        emitToUser(null, user._id, 'notification.inapp', {
+          id: String(log._id),
+          title: title || 'System Alert',
+          message: body,
+          createdAt: log.createdAt
+        });
+
+        successCount++;
       }
     } else {
       const NotificationLog = require('../../models/NotificationLog');
