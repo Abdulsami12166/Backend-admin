@@ -613,7 +613,8 @@ exports.sendDirectNotification = asyncHandler(async (req, res) => {
     const user = await User.findById(userId);
     if (user) targets.push(user);
   } else if (role) {
-    targets = await User.find({ role });
+    const queryRole = role === 'customer' ? 'user' : role;
+    targets = await User.find({ role: queryRole });
   } else {
     targets = await User.find({});
   }
@@ -626,7 +627,7 @@ exports.sendDirectNotification = asyncHandler(async (req, res) => {
   for (const user of targets) {
     if (channel === 'push') {
       if (user.fcmToken) {
-        await sendPushNotification(user.fcmToken, title || 'System Alert', body, {}, user._id);
+        await sendPushNotification(user.fcmToken, title || 'System Alert', body, { screen: 'Notifications', event: 'admin.broadcast' }, user._id);
         successCount++;
       } else {
         // Fallback log
@@ -681,6 +682,16 @@ exports.sendDirectNotification = asyncHandler(async (req, res) => {
         recipient: { userId: user._id },
         createdAt: log.createdAt,
       });
+
+      if (channel === 'inApp') {
+        const { emitToUser } = require('../../utils/eventBus');
+        emitToUser(null, user._id, 'notification.inapp', {
+          id: String(log._id),
+          title: title || 'System Alert',
+          message: body,
+          createdAt: log.createdAt
+        });
+      }
 
       successCount++;
     }
