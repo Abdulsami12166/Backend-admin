@@ -49,11 +49,20 @@ const initFirebase = () => {
 const sendPushNotification = async (fcmToken, title, body, data = {}, userId = null, orderId = null) => {
   if (!fcmToken) return;
 
-  const firebaseAdmin = initFirebase();
   let status = 'sent';
   let failureReason = '';
 
-  if (!firebaseAdmin) {
+  // ponytail: Check if the token is a mock token (used for testing or socket-only fallbacks)
+  const isMockToken = fcmToken.startsWith('fcm_') || fcmToken.startsWith('fcm_mock_');
+
+  if (isMockToken) {
+    status = 'failed';
+    failureReason = 'Mock FCM token detected';
+  }
+
+  const firebaseAdmin = !isMockToken ? initFirebase() : null;
+
+  if (!isMockToken && !firebaseAdmin) {
     status = 'failed';
     failureReason = 'Firebase Admin not initialized (missing credentials)';
   }
