@@ -1,4 +1,12 @@
-const ADMIN_ROLES = ['super-admin', 'product-manager', 'inventory-manager', 'support'];
+const ADMIN_ROLES = [
+  'super-admin',
+  'admin',
+  'product-manager',
+  'inventory-manager',
+  'support',
+  'finance-manager',
+  'customer-service'
+];
 
 const PERMISSIONS = [
   'dashboard:view',

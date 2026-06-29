@@ -239,7 +239,7 @@ const triggerEventNotifications = async (event, data = {}) => {
     ].includes(event);
 
     if (isAdminEvent) {
-      targets = await User.find({ role: { $in: ['admin', 'super-admin', 'support', 'product-manager', 'inventory-manager'] } });
+      targets = await User.find({ role: { $in: ['admin', 'super-admin', 'support', 'product-manager', 'inventory-manager', 'finance-manager', 'customer-service'] } });
     } else {
       // Find specific user associated with the event data
       let userId = data.userId || data.user?._id || data.user || data.customerId;

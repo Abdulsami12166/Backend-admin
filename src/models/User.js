@@ -9,7 +9,7 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true, minlength: 6, select: false },
     role: {
       type: String,
-      enum: ['user', 'seller', 'admin', 'super-admin', 'product-manager', 'inventory-manager', 'support'],
+      enum: ['user', 'seller', 'admin', 'super-admin', 'product-manager', 'inventory-manager', 'support', 'finance-manager', 'customer-service'],
       default: 'user',
     },
     fcmToken: { type: String, default: '' },

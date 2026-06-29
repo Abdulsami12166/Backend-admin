@@ -8,7 +8,7 @@ const { socketEvents } = require('./socketEvents');
 
 const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET || 'default_admin_secret';
 const USER_JWT_SECRET = process.env.JWT_SECRET || process.env.ADMIN_JWT_SECRET || 'default_user_secret';
-const ADMIN_ROLES = ['admin', 'super-admin', 'product-manager', 'inventory-manager', 'support'];
+const ADMIN_ROLES = ['admin', 'super-admin', 'product-manager', 'inventory-manager', 'support', 'finance-manager', 'customer-service'];
 
 const normalizeRole = role =>
   String(role || '')
